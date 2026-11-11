@@ -1,0 +1,11 @@
+/assets/*
+  cache-control: max-age=31536000
+  cache-control: immutable
+
+/.well-known/apple-app-site-association
+  content-type: application/json
+  cache-control: public, max-age=3600
+
+/.well-known/cook-build.json
+  content-type: application/json
+  cache-control: no-store

@@ -1,0 +1,59 @@
+# 私人菜谱与文件迁移
+
+Web 的「我的 → 我的菜谱」保存在本机。导出私人菜谱，再在另一浏览器或云食册 iOS 版的「我的菜谱」导入，可迁移食材、厨具、来源和备注。收藏/历史的备份是另一种文件，不能混用。
+
+导入先预览新增、相同和冲突条目，不会覆盖原有菜谱。相同编号不同内容默认跳过，也可另存副本（新编号，保留 `copiedFrom`）；重复导入同一内容不会再生成副本。同名不同编号仍是不同菜谱。未知版本、未知菜谱字段或任意坏条目会拒绝整个文件，不会部分导入。
+
+## 跨端契约 v1
+
+`{ app: "cook", kind: "custom-recipes", version: 1, exportedAt, recipes }`。
+
+每条含 `customId, name, stuff, tools, createdAt, updatedAt`；可选 `bv, link, note, tags, methods, difficulty, copiedFrom`。时间是 Unix 毫秒整数，非 Swift Date 的默认编码。内置菜谱的整数 id 不参与这个协议。旧 Web `cook:custom-recipes` 的 id 和创建时间保持不变，无需迁库。
+
+- 最多 5000 条，UTF-8 文件最多 5 MB；菜名 30 个 UTF-16 单元、备注 20000；食材/厨具/标签/做法每列最多 64 项，每项最多 100 个 UTF-16 单元。
+- 来源为合法 BV 号或 HTTP(S) URL，不接受脚本、文件 URL 或带用户名密码的链接。
+- 私人数据不进入 Web CloudBase 收藏/历史协议，不自动上传到云乐坊。iOS 使用同一 Apple 账号的 iCloud 私有库，不等于 Web 账号同步。
+- 文件导出只含当前有效菜谱，导入不是镜像同步，不会根据文件缺少的条目删除本机菜谱。iOS 遇到已删除的同一编号时作为冲突处理，可显式另存副本。
+- 库中有无法识别的数据时应保留原始存储并报告错误，不静默丢弃。v1 JSON 是文本和链接，不含图片/视频附件和公共投稿。原生视频关联备份使用单独的 v2，见下文。
+
+实现：`packages/cook/src/utils/custom-recipes.ts` 和 `CookCore/PrivateRecipes.swift`；共享样例为 `packages/data/fixtures/private-recipes.json`。`bash scripts/test-private-recipe-roundtrip.sh` 实际执行 Web 导出 → Swift 解析/导出 → Web 比较，并运行冲突、去重、坏文件用例。所有测试使用合成数据。
+
+## iOS 持久化与验收边界
+
+新增 `PrivateRecipeRecord` 模型，不改内置菜谱的整数编号，也不迁移收藏/历史引用。JSON payload 作为一个字段存储，所有必填属性都有默认值、无唯一约束，继续由 SwiftData 的现有 CloudKit 私有库同步。有效重复记录按更新时间取最新；同编号只要存在删除标记，就不再显示或导出，即使晚到副本有更新的时间。编辑打开后发现本机已收到其他改动时拒绝覆盖并保留编辑表单。系统级离线并发编辑仍遵循 CloudKit 合并行为，首版不提供多版本编辑历史。
+
+删除清空所有重复记录的正文，只保留编号与时间组成的 tombstone，旧文件遇到同一编号只可明确另存副本；文件导出不包含 tombstone。文件导入整批验证再保存，失败不提交一部分；Web 保存前读取最新本地存储，配额不足不报告成功。离线隐私政策同步说明私人菜谱字段、文件迁移和删除标记的保留方式。
+
+启动、收到记录变化及回到前台时，会再次清理同步带回的已删除正文，并把删除标记应用到同编号的所有副本。清理使用独立事务，失败保留删除状态并等待后续重试。该修复来自 [2026-10-24 真实生产验收](./ios-production-sync-2026-10-24.md)；构建 6 已在 iPhone 与 Mac 上验证旧残留自动清理、离线新增保留和离线修改 / 删除冲突后两端正文清空，手机重启后结果保持。
+
+已整合 #112 的 CloudKit 初始化机制（schema 2 含 FridgeItem），版本已升到 3，新增 PrivateRecipeRecord。2026-10-24 发布流程已补齐冰箱和私人菜谱结构，并回读确认当前五模型的 Development/Production 完整结构匹配，详见 [iOS P0 验收记录](./ios-p0-validation.md)。结构匹配、代码及模拟器测试不能证明生产 iCloud 已经可用。
+
+维护者于 2026-10-24 明确将本轮源码合并条件限定为代码与模拟器验收：与最新 main 集成后，代码检查、Web/Swift 文件往返和 iPhone/iPad 模拟器测试全部通过。模拟器中的本地保存、迁移和进程重启结果不代表生产 CloudKit 已通过验收，源码合并也不代表发布 App。
+
+当前五模型的 schema 结构、构建 4 的同账户在线生产读写，以及构建 6 的离线新增和并发修改 / 删除重连已核对；首次构建 4 新条目缺失仍未复现、根因未知。维护者在 2026-10-24 决定剩余验收使用模拟器，不再要求真机。本地保留、独立存储及文件往返的替代覆盖见[模拟器验收](./ios-simulator-acceptance-2026-10-24.md)；真实 Apple 账号退出 / 切换和服务端账号隔离仍未实测，不将其写成已通过。此前生产结论只适用于实际核对的相同候选构建，不能用不同构建混测。
+
+当前实现不含 Web 云同步、公共投稿，以及 iOS 私人菜谱参与内置推荐、收藏或历史；Web 原有参与推荐/随机选菜的行为保留。范围与验收决定见 [0013 私人菜谱与跨端文件迁移](../decisions/0013-private-recipes)。
+
+## 个人食材和厨具
+
+「我的 → 食材和厨具」支持按类别添加、删除自定义名称，以及隐藏和恢复内置条目。配置会用于经典和工作台模式的选择、搜索、拖入校验、输入联想和私人菜谱编辑；iOS 冰箱选择器也共用配置。隐藏只影响候选列表，已选食材/厨具仍有取消入口，忌口独立保留。新标签不会凭空生成新的公共菜谱，网页版会用它们匹配自己的菜谱。设计见 [0014 个人食材和厨具](../decisions/0014-personal-catalog)。
+
+个人配置的备份为独立 JSON：`{ app: "cook", kind: "personal-catalog", version: 1, items, hidden }`，每项 `{ category, name }`。类别为 `vegetable/meat/staple/tools`，每列最多 500 项，名称 1–30 UTF-16 单元，文件最多 256 KB。导入确认后合并，重复名称保留本机类别。iOS 原子文件、Web localStorage 都先验证后保存；出错保留原文件，不修改菜谱 v1 或 CloudKit schema。共享用例 `packages/data/fixtures/personal-catalog.json`，`bash scripts/test-personal-catalog-roundtrip.sh` 执行两端真实导出器的往返测试。
+
+## 菜谱来源
+
+在线来源通过链接或 BV 号记录。有在线链接且没有视频附件时，点击私人菜谱名称直接打开来源；有视频附件时优先进入详情，在原生播放器中查看做法，并保留在线来源入口。
+
+## 原生视频附件
+
+iOS / iPadOS（以及同一 iOS 包运行于 Apple Silicon Mac）支持每道私人菜谱关联一个 MP4、MOV 或 M4V 视频，最大 500 MiB。系统“文件”选择器可选择本机、iCloud Drive 或其他文件提供者的文件；App 有界复制并验证可播放的视频轨道，不转码、不改动源文件。编辑中可替换、移除；取消编辑回收草稿，保存失败保留旧关联与旧文件。
+
+开启“存入 iCloud Drive”后保存到 `iCloud.fun.yunle.cook` 的 `Documents/Videos/<UUID>.<extension>`，在“文件”中显示为云食册。未开启或 iCloud 不可用时可选择仅本机保存；已有本机视频可在编辑中主动存入 iCloud。附件标识、原文件名、格式、大小和位置通过现有 `PrivateRecipeRecord.payload` 顶层 `videos` 映射同步，不新增 SwiftData / CloudKit 字段。v1 正文字段仍保持兼容，旧版可读文字，但旧版编辑可能丢失附件关联。
+
+iCloud Drive 的文件与 CloudKit 的关联元数据分别同步；关联先到、文件未到时提示重试或重新选择。首次播放请求下载，下载后可离线观看，系统回收下载后需联网。只存本机的附件带安装标识，其他设备不会误用自己的同名路径，也不会自动上传到不同 Apple 账号。
+
+保存新关联成功后才清理无引用的旧副本，另存副本共用的视频在最后一个引用移除前保留。移除/删除不会改动源文件；云盘不可访问或删除失败会提示清理旧副本。其他设备上的本机附件不可由当前设备删除，原设备副本可能继续保留。远端旧记录、离线编辑或旧备份重新带回已删除的关联时提示文件缺失，不擅自恢复视频。
+
+“导出私人菜谱（文字与链接）”继续生成可供 Web 导入的 v1；“导出视频关联备份（iOS）”生成 `{ app: "cook", kind: "custom-recipes", version: 2, exportedAt, recipes, videos }`。`recipes` 使用 v1 字段，`videos` 为菜谱 ID 到附件描述的映射，禁止路径拼接、不明字段和无对应菜谱的引用。v2 只含元数据，不含视频字节，原生导入同时支持 v1/v2，Web 会明确拒绝未知版本。恢复到同一 Apple 账号可定位原 iCloud 文件；文件被删/移走需重新关联。本机文件跨设备须通过“导出视频文件”或原文件单独迁移并重新关联。导入不覆盖已有不同关联，按现有冲突预览另存副本。
+
+发布时需在签名权限中包含 `CloudKit`、`CloudDocuments` 和 `com.apple.developer.ubiquity-container-identifiers`，并为 App ID 启用 iCloud Documents。模拟器的注入目录测试不代表生产 iCloud 已验收；正式签名包及真实账号的文件上传、下载、多设备播放仍需按发布候选另行核验。计划和本轮结果见 [视频附件实施与验证](https://github.com/YunYouJun/cook/blob/main/specs/private-recipe-videos/README.md)。

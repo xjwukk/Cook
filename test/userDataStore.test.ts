@@ -1,0 +1,145 @@
+import type { RecipeItem } from '../apps/web/app/types'
+import type { DbRecipeItem } from '../apps/web/app/utils/db'
+import { createHash, webcrypto } from 'node:crypto'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createCloudbaseUserDataRemote, USER_DATA_FUNCTION } from '../apps/web/app/adapters/userData'
+import { favoriteEntries, setFavoriteEntries, toggleFavorite } from '../apps/web/app/composables/store/favorite'
+import { addRecipeHistory, clearRecipeHistories, recipeHistories, removeRecipeHistory } from '../apps/web/app/composables/store/history'
+import { exportLocalUserData, importLocalUserData, localUserData } from '../apps/web/app/composables/store/userData'
+import { userDataMeta } from '../apps/web/app/composables/store/userDataMeta'
+
+const NOW = 1_800_000_000_000
+const ownerDigest = createHash('sha256').update('u1').digest('hex')
+
+function recipe(name: string, id?: number): DbRecipeItem {
+  return { id, name, stuff: [], tools: [] }
+}
+
+beforeEach(() => {
+  vi.stubGlobal('crypto', webcrypto)
+  vi.useFakeTimers({ now: NOW })
+  setFavoriteEntries([])
+  recipeHistories.value = []
+  userDataMeta.value = { favoriteRemovals: [], historyRemovals: [], historyClearedAt: 0, lastUid: '' }
+  return () => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  }
+})
+
+describe('favorite tombstones', () => {
+  it('records a removal and clears it when favorited again', () => {
+    toggleFavorite(recipe('A', 1))
+    expect(favoriteEntries.value).toEqual([{ id: 1, time: NOW }])
+    expect(userDataMeta.value.favoriteRemovals).toEqual([])
+
+    vi.advanceTimersByTime(10)
+    toggleFavorite(recipe('A', 1))
+    expect(favoriteEntries.value).toEqual([])
+    expect(userDataMeta.value.favoriteRemovals).toEqual([{ id: 1, time: NOW + 10 }])
+
+    vi.advanceTimersByTime(10)
+    toggleFavorite(recipe('A', 1))
+    expect(userDataMeta.value.favoriteRemovals).toEqual([])
+  })
+})
+
+describe('history tombstones', () => {
+  it('records single removals', () => {
+    addRecipeHistory(recipe('A'))
+    removeRecipeHistory(recipeHistories.value[0]!)
+    expect(recipeHistories.value).toEqual([])
+    expect(userDataMeta.value.historyRemovals).toEqual([{ name: 'A', time: NOW }])
+  })
+
+  it('records a clear watermark and drops single removals', () => {
+    addRecipeHistory(recipe('A'))
+    removeRecipeHistory(recipeHistories.value[0]!)
+    addRecipeHistory(recipe('B'))
+    clearRecipeHistories()
+    expect(recipeHistories.value).toEqual([])
+    expect(userDataMeta.value.historyClearedAt).toBe(NOW)
+    expect(userDataMeta.value.historyRemovals).toEqual([])
+  })
+})
+
+describe('export / import', () => {
+  it('merges an export from another device into local data', () => {
+    toggleFavorite(recipe('A', 1))
+    addRecipeHistory(recipe('A'))
+    const file = exportLocalUserData()
+
+    setFavoriteEntries([{ id: 2, time: NOW - 5 }])
+    recipeHistories.value = []
+    const result = importLocalUserData(JSON.stringify(file))
+
+    expect(result).toEqual({ favorites: 2, histories: 1 })
+    expect(favoriteEntries.value.map(f => f.id)).toEqual([2, 1])
+    expect(recipeHistories.value.map(h => h.recipe.name)).toEqual(['A'])
+  })
+
+  it('leaves local data alone for an unrecognised file', () => {
+    toggleFavorite(recipe('A', 1))
+    expect(importLocalUserData('{"favorites":[]}')).toBeNull()
+    expect(favoriteEntries.value).toEqual([{ id: 1, time: NOW }])
+  })
+
+  it('applies imported deletions', () => {
+    toggleFavorite(recipe('A', 1))
+    const file = exportLocalUserData()
+    file.favorites = []
+    file.favoriteRemovals = [{ id: 1, time: NOW + 1 }]
+
+    importLocalUserData(JSON.stringify(file))
+    expect(favoriteEntries.value).toEqual([])
+  })
+})
+
+describe('localUserData', () => {
+  it('only rewrites the last uid when it changes', () => {
+    const before = userDataMeta.value
+    localUserData.writeLastUid('')
+    expect(userDataMeta.value).toBe(before)
+    localUserData.writeLastUid('u1')
+    expect(localUserData.readLastUid()).toBe('u1')
+  })
+})
+
+describe('createCloudbaseUserDataRemote', () => {
+  const document = {
+    version: 1 as const,
+    favorites: [{ id: 1, time: NOW }],
+    favoriteRemovals: [],
+    histories: [{ recipe: { name: 'A', stuff: [], tools: [] } as RecipeItem, time: NOW }],
+    historyRemovals: [],
+    historyClearedAt: 0,
+    updatedAt: NOW,
+  }
+
+  it('reads through the cook-user-data function without naming a uid', async () => {
+    const callFunction = vi.fn(async () => ({ ok: true, protocolVersion: 2, document: { favorites: [] } }))
+    const remote = createCloudbaseUserDataRemote(callFunction)
+
+    await expect(remote.read('u1')).resolves.toEqual({ favorites: [] })
+    expect(callFunction).toHaveBeenCalledWith(USER_DATA_FUNCTION, { action: 'get', ownerDigest })
+    expect(callFunction).toHaveBeenCalledWith(USER_DATA_FUNCTION, { action: 'capabilities', ownerDigest })
+  })
+
+  it('returns null when the account has no document', async () => {
+    const remote = createCloudbaseUserDataRemote(async () => ({ ok: true, protocolVersion: 2, document: null }))
+    await expect(remote.read('u1')).resolves.toBeNull()
+  })
+
+  it('returns the atomically accepted document without naming a uid', async () => {
+    const callFunction = vi.fn(async () => ({ ok: true, updatedAt: NOW, document, protocolVersion: 2 }))
+    await expect(createCloudbaseUserDataRemote(callFunction).write('u1', document)).resolves.toEqual(document)
+    expect(callFunction).toHaveBeenCalledWith(USER_DATA_FUNCTION, { action: 'sync', ownerDigest, document })
+  })
+
+  it('surfaces function failures', async () => {
+    const remote = createCloudbaseUserDataRemote(async () => ({ ok: false, code: 'LOGIN_REQUIRED' }))
+    await expect(remote.read('u1')).rejects.toMatchObject({ code: 'login_required' })
+    await expect(remote.write('u1', document)).rejects.toMatchObject({ code: 'login_required' })
+    await expect(createCloudbaseUserDataRemote(async () => null).read('u1')).rejects.toThrow('unknown')
+  })
+})

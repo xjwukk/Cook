@@ -1,0 +1,70 @@
+{
+  "contract": "docs/dev/design-system.md",
+  "targetViewports": [
+    "390x844",
+    "834x1024",
+    "1440x900"
+  ],
+  "accessibility": {
+    "status": "pass",
+    "evidence": "在 1440x900 与 390x844 下用脚本计算全部语义色对的 WCAG 对比度，均达 AA：ink/paper 14.06、ink-2/paper 5.72、ink-3/paper 4.64、brand/paper 4.73、brand-ink/paper 6.34、brand-contrast/brand 4.77、warn/paper 4.92、herb/paper 6.87、saffron-ink/paper 5.22、ink/surface 14.78。原先 brand/paper 4.20 与 ink-3/paper 3.27 不达标，已把主色从 #C4552D 调到 #B84E27、把 ink-3 从 #94877B 调到 #7A6E62 修正。键盘焦点：styles/index.scss 对 a/input/textarea/select/[tabindex] 统一提供 2px 陶土橙 focus-visible 环，食材芯片与侧栏导航另有各自的 focus-visible 规则。触控目标：已选食材 token 视觉高 30px 但用 ::after 外扩到 44px 命中区（elementFromPoint 上下各 6px 均命中）；触摸设备进一步把 token 实体放大到 40px 并留 2px 外扩，避免横向滚动容器裁切；「清空」按钮实测 44x44。prefers-reduced-motion 下移除芯片弹跳动画与位移动画（IngredientChip、RecipeDetailSheet、RecipeListRow 均已处理）。"
+  },
+  "responsive": {
+    "status": "pass",
+    "evidence": "按 docs/dev/design-system.md 的三端断点验收：390x844 单列 + 底部标签栏 + 结果底部弹层，无横向溢出（scrollWidth 等于 innerWidth）；834x1024 平板为 64px 图标导航栏 + 筛选区与结果栏两栏，导航栏只留图标、隐藏文字标签与折叠按钮，修复了此前「切换到旧版」竖排溢出；1440x900 桌面为 208px 完整侧栏 + 三栏。断点从原来的 1024 单点改为 768（平板入口）与 1200（桌面完整侧栏），app.vue、DesktopSidebar、tabs.vue、home/index.vue、ChooseFood、ReviewedRecipeFilters、CookingWorkbench 全部对齐；结果栏宽度在平板 clamp(300px,42%,460px)、桌面 clamp(360px,42%,560px)。长文本以 ellipsis 或换行处理，结果行标题与食材摘要均单行省略。"
+  },
+  "contentStates": {
+    "loading": {
+      "status": "pass",
+      "evidence": "在页面脚本运行前替换 indexedDB 使其 open 永不回调，选择「番茄」后结果面板显示「正在准备菜谱…」与结构对齐真实结果行的骨架屏（计数、分段、解锁建议均为占位块），页面结构不跳动。截图 state-loading-1440x900.png。数据来自本地 IndexedDB，首屏无取消入口，符合契约中「等待（无取消）」的约定。"
+    },
+    "empty": {
+      "status": "pass",
+      "evidence": "清空已选食材后，桌面结果栏显示「从左侧选几样食材」并说明也可只按厨具、饮食目标或专题筛选；预览条给出「试试番茄＋鸡蛋」示例入口作为安全的下一步。截图 state-empty-1440x900.png。"
+    },
+    "error": {
+      "status": "pass",
+      "evidence": "强制让 IndexedDB 抛错后，结果栏显示「菜谱没有加载成功」与具体失败原因，右侧提供「重试」主按钮；控制台同时有 DevTools 浮层报错。截图 state-error-1440x900.png。"
+    },
+    "partial": {
+      "status": "pass",
+      "evidence": "选择番茄与鸡蛋后切到「差两种」匹配模式，结果行以琥珀色 --c-warn 标出缺失食材（如「缺 面食、香肠」「缺 土豆、洋葱」），已有食材正常显示，可得的菜名与厨具不受影响。截图 state-partial-1440x900.png。"
+    },
+    "success": {
+      "status": "pass",
+      "evidence": "在菜谱库点击第一行的收藏星，图标切换为实心并触发 aria-pressed=true 与弹跳动画（reduced-motion 下关闭），状态可再次点击撤销。截图 state-success-1440x900.png。"
+    },
+    "permission": {
+      "status": "pass",
+      "evidence": "「我的」页在未登录时显示「使用云乐坊账号登录」与说明「安全授权，无需在料理手帐输入密码」，并明确标示当前域名尚未登记为登录回跳地址，属于访问边界说明与安全返回路径。截图 state-permission-1440x900.png。"
+    }
+  },
+  "renderedEvidence": [
+    {
+      "viewport": "390x844",
+      "artifact": "mobile-home-390x844.png",
+      "observation": "手机单列：顶部为视图切换与筛选/清空，食材分组为纸白卡片 + 墨线 + 浅阴影，已选「番茄」「鸡蛋」为陶土橙实底印章并带白色对勾，emoji 装在统一圆形纸章容器内；底部为结果预览条与四个标签页。无横向滚动，触控目标不小于 44px。"
+    },
+    {
+      "viewport": "834x1024",
+      "artifact": "tablet-home-834x1024.png",
+      "observation": "平板两栏：左侧 64px 图标导航栏（新 logo 居中，文字标签隐藏），中间为食材筛选区，右侧为固定结果栏。此前图标栏底部文字竖排溢出的问题已消失，结果栏宽度收窄后结果行仍不换行、不溢出。"
+    },
+    {
+      "viewport": "1440x900",
+      "artifact": "desktop-home-1440x900.png",
+      "observation": "桌面三栏：208px 完整侧栏（新 logo + 料理手帐字标 + 导航），中间筛选区，右侧结果栏。首屏即可看到产品用途与主要操作；标题字重与正文对比清晰，计数使用衬线数字，主色仅出现在已选态与主操作上，没有出现卡片套卡片。"
+    },
+    {
+      "viewport": "1440x900",
+      "artifact": "state-dark-1440x900.png",
+      "observation": "暗色主题：暖棕底 #17130F 与卡片 #221C16 保持层次差，文字为暖白，已选印章改用较亮的 #E08A5F，墨线 #362C23 仍可见；没有残留冷灰蓝的反相痕迹。"
+    }
+  ],
+  "knownLimits": [
+    "iOS 与 Android 端无法在当前 Windows 环境构建或截图；iOS 的 AccentColor、LaunchBackground、AppIcon 与 Icon Composer 分层图标改动需在 macOS 上执行 xcodegen generate 后于模拟器核对。",
+    "Android 尚无工程（0016 决策），本轮只把名称、图标来源、语义色与断点写入 docs/dev/android-roadmap.md。",
+    "骨架屏与错误态通过替换 indexedDB 人为触发，不是真实网络故障；真实离线场景未在本轮验证。",
+    "关于页里的 iPhone 界面截图（apps/web/public/about/assets/*.webp）是此前录制的静态图，仍显示旧版蓝色界面；重新录制需要 macOS 与模拟器。关于页本身的配色与品牌图已更新，见 about-1440x900.png。"
+  ]
+}

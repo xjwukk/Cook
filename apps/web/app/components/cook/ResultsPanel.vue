@@ -1,0 +1,733 @@
+<script lang="ts" setup>
+import type { IonSearchbarCustomEvent, SearchbarInputEventDetail } from '@ionic/core'
+import type { Gesture, GestureDetail } from '@ionic/vue'
+import type { RecipeMatch } from '@yunyoujun/cook'
+import type { SearchMode } from '~/composables/store/recipe'
+import type { RecipeItem } from '~/types'
+import { createGesture } from '@ionic/vue'
+import { useCookFunnel } from '~/composables/useCookFunnel'
+import { getEmojisFromStuff } from '~/utils'
+import { yunleHaptic } from '~/utils/yunleHost'
+
+/**
+ * 常驻底部弹层（类似「地图」App）：收起时是一条结果预览，拖到一半能边选食材边看菜，拖到顶是完整列表
+ */
+const props = defineProps<{ active: boolean, desktop?: boolean }>()
+const emit = defineEmits<{ scrollTop: [], detail: [recipe: RecipeItem, match?: RecipeMatch] }>()
+/** 弹层当前遮住的高度，页面用它留出底部空白，保证最下面的分组能滚出来 */
+const inset = defineModel<number>('inset', { default: 0 })
+
+type Detent = 'collapsed' | 'half' | 'full'
+
+/** 收起时露出的高度：把手 + 一行预览 */
+const COLLAPSED = 92
+const HALF_RATIO = 0.52
+/** 完全展开时和页面顶部导航栏之间留的空隙 */
+const TOP_GAP = 8
+const PAGE = 30
+
+const rStore = useRecipeStore()
+const reducedMotion = usePreferredReducedMotion()
+
+// ---------- 尺寸与分档 ----------
+const panelRef = ref<HTMLElement>()
+const pageEl = shallowRef<HTMLElement | null>(null)
+const pageHeight = ref(0)
+const headerHeight = ref(0)
+const sheetHeight = computed(() => Math.max(COLLAPSED, pageHeight.value - headerHeight.value - TOP_GAP))
+const detentOffsets = computed<Record<Detent, number>>(() => ({
+  full: 0,
+  half: Math.max(0, sheetHeight.value - Math.round(pageHeight.value * HALF_RATIO)),
+  collapsed: Math.max(0, sheetHeight.value - COLLAPSED),
+}))
+
+const detent = ref<Detent>('collapsed')
+const offset = ref(0)
+const dragging = ref(false)
+/** 首次量好尺寸之前不做过渡，否则冷启动时弹层会从完全展开滑到收起 */
+const settled = ref(false)
+
+function measure() {
+  const page = pageEl.value
+  if (!page)
+    return
+  pageHeight.value = page.clientHeight
+  headerHeight.value = (page.querySelector(':scope > ion-header') as HTMLElement | null)?.offsetHeight ?? 0
+  if (!dragging.value)
+    snapTo(detent.value)
+}
+
+function snapTo(next: Detent) {
+  if (next !== detent.value)
+    void yunleHaptic('light')
+  detent.value = next
+  offset.value = detentOffsets.value[next]
+  inset.value = props.desktop || next === 'full' ? 0 : sheetHeight.value - offset.value
+}
+
+// ---------- 拖动 ----------
+let gesture: Gesture | undefined
+let startOffset = 0
+
+function onStart() {
+  dragging.value = true
+  startOffset = offset.value
+}
+
+function onMove(detail: GestureDetail) {
+  const { full, collapsed } = detentOffsets.value
+  let next = startOffset + detail.deltaY
+  // 超出两端时加阻尼，和系统弹层一样有一点橡皮筋手感
+  if (next < full)
+    next = full - (full - next) * 0.25
+  else if (next > collapsed)
+    next = collapsed + (next - collapsed) * 0.25
+  offset.value = next
+}
+
+function onEnd(detail: GestureDetail) {
+  dragging.value = false
+  // 按松手时的速度往前预估一段，再吸附到最近的分档
+  const projected = offset.value + detail.velocityY * 180
+  const entries = Object.entries(detentOffsets.value) as [Detent, number][]
+  const [nearest] = entries.reduce((best, entry) => Math.abs(entry[1] - projected) < Math.abs(best[1] - projected) ? entry : best)
+  snapTo(nearest)
+}
+
+useResizeObserver(pageEl, measure)
+watch(() => props.desktop, () => {
+  dragging.value = false
+  measure()
+})
+
+onMounted(() => {
+  pageEl.value = panelRef.value?.closest('.ion-page') as HTMLElement | null
+  measure()
+  requestAnimationFrame(() => requestAnimationFrame(() => settled.value = true))
+  if (!panelRef.value)
+    return
+  gesture = createGesture({
+    el: panelRef.value,
+    gestureName: 'cook-results-panel',
+    direction: 'y',
+    threshold: 8,
+    // 展开到顶时列表要能正常滚动，只允许从顶部把手区域拖动
+    canStart: detail => !props.desktop && (detent.value !== 'full' || Boolean((detail.event.target as Element | null)?.closest('.results-panel-head'))),
+    onStart,
+    onMove,
+    onEnd,
+  })
+  gesture.enable()
+})
+
+onBeforeUnmount(() => gesture?.destroy())
+
+function onHeadClick() {
+  if (props.desktop)
+    return
+  snapTo(detent.value === 'collapsed' ? 'full' : 'collapsed')
+}
+
+function goAdjust() {
+  if (!props.desktop)
+    snapTo('collapsed')
+  emit('scrollTop')
+}
+
+// 清空食材后收起；选食材时不自动展开，免得挡住正在点的按钮
+watch(() => rStore.selectedStuff.length > 0 || Boolean(rStore.curTool), (has) => {
+  if (!has)
+    snapTo('collapsed')
+})
+
+// ---------- 结果数据 ----------
+const browseMode = computed(() => !rStore.selectedStuff.length)
+const hasSelection = computed(() => rStore.selectedStuff.length > 0 || Boolean(rStore.curTool) || rStore.hasReviewedSelection)
+const groupLabels = ['齐全', '差一种', '差两种']
+const groupHints = ['食材都有', '补一种就能做', '补两种就能做']
+const groups = computed(() => groupLabels.map((label, missing) => ({
+  label,
+  items: rStore.recipeMatches.filter((match: RecipeMatch) => match.missingStuff.length === missing),
+})))
+const active = ref(0)
+const slideDirection = ref(1)
+const limit = ref(PAGE)
+
+watch(() => rStore.recipeMatches, () => {
+  if (!groups.value[active.value]?.items.length)
+    active.value = Math.max(0, groups.value.findIndex(group => group.items.length))
+  limit.value = PAGE
+})
+
+const currentMatches = computed(() => groups.value[active.value]?.items ?? [])
+const total = computed(() => browseMode.value ? rStore.browseRecipes.length : currentMatches.value.length)
+const visibleMatches = computed(() => currentMatches.value.slice(0, limit.value))
+const visibleBrowseRecipes = computed(() => rStore.browseRecipes.slice(0, limit.value))
+
+function onGroupChange(value: unknown) {
+  const next = Number(value) || 0
+  slideDirection.value = next >= active.value ? 1 : -1
+  active.value = next
+  limit.value = PAGE
+  void yunleHaptic('light')
+}
+
+const modeOptions: { value: SearchMode, label: string }[] = [
+  { value: 'loose', label: '全部推荐' },
+  { value: 'strict', label: '用上所有已选' },
+  { value: 'survival', label: '只看食材齐全' },
+]
+
+function onModeChange(value: unknown) {
+  rStore.setMode(modeOptions.some(option => option.value === value) ? value as SearchMode : 'loose')
+  void yunleHaptic('light')
+}
+
+function onKeyword(ev: IonSearchbarCustomEvent<SearchbarInputEventDetail>) {
+  rStore.keyword = ev.detail.value ?? ''
+}
+
+function addSuggestion(name: string) {
+  rStore.addStuff(name)
+  void yunleHaptic('success')
+}
+
+// ---------- 收起时的预览 ----------
+const count = computed(() => rStore.resultCount)
+const selectedEmojis = computed(() => {
+  const emojis = getEmojisFromStuff(rStore.selectedStuff)
+  return emojis.length ? emojis.slice(0, 3) : ['🧺']
+})
+const selectedSummary = computed(() => {
+  const names = [...rStore.selectedStuff]
+  if (rStore.curTool)
+    names.push(rStore.curTool === '一口大锅' ? '炒锅' : rStore.curTool)
+  if (rStore.activeDietaryGoalOption)
+    names.push(rStore.activeDietaryGoalOption.label)
+  if (rStore.activeDiscoverySceneOption)
+    names.push(rStore.activeDiscoverySceneOption.label)
+  return names.join('、')
+})
+
+// 收起时内容区移到页面以下，会从半透明的标签栏后面透出来；随展开程度淡入淡出（只改 opacity）
+const bodyOpacity = computed(() => props.desktop ? 1 : Math.min(1, Math.max(0, (sheetHeight.value - offset.value - COLLAPSED) / 120)))
+
+const bodyRef = useTemplateRef<HTMLElement>('bodyRef')
+const bodyInViewport = useElementVisibility(bodyRef)
+const documentVisibility = useDocumentVisibility()
+// Do not build Ionic result rows while the user is still choosing ingredients.
+const bodyVisible = computed(() => props.active && hasSelection.value && (props.desktop || detent.value !== 'collapsed' || dragging.value))
+useCookFunnel(computed(() => ({
+  active: props.active && documentVisibility.value === 'visible',
+  hasIngredients: rStore.selectedStuff.length > 0,
+  results: !bodyVisible.value || !bodyInViewport.value || !settled.value || dragging.value || rStore.loadError
+    ? 'hidden'
+    : rStore.isSearching ? 'loading' : count.value > 0 ? 'ready' : 'empty',
+})))
+
+function tryExample() {
+  rStore.addStuff('番茄、鸡蛋')
+  if (!props.desktop)
+    snapTo('full')
+}
+
+const sheetStyle = computed(() => {
+  if (props.desktop)
+    return { top: `${headerHeight.value + 16}px` }
+  return {
+    'height': `${sheetHeight.value}px`,
+    'transform': `translate3d(0, ${offset.value}px, 0)`,
+    'transition': !settled.value || dragging.value || reducedMotion.value === 'reduce' ? 'none' : undefined,
+    '--sheet-visible': `${sheetHeight.value - offset.value}px`,
+  }
+})
+</script>
+
+<template>
+  <div
+    ref="panelRef"
+    class="results-panel"
+    :class="[`is-${detent}`, { 'is-dragging': dragging, 'is-desktop': desktop }]"
+    :style="sheetStyle"
+    role="region"
+    aria-label="可以做的菜"
+  >
+    <div class="results-panel-head" @click="onHeadClick">
+      <div v-if="!desktop" class="results-panel-grabber" aria-hidden="true" />
+      <ResultsPreview
+        :loading="rStore.isSearching"
+        :error="rStore.loadError"
+        :has-selection="hasSelection"
+        :count="count"
+        :summary="selectedSummary"
+        :emojis="selectedEmojis"
+        :expanded="detent !== 'collapsed'"
+        :docked="desktop"
+        @toggle="onHeadClick"
+        @adjust="goAdjust"
+        @example="tryExample"
+        @retry="rStore.loadRecipes"
+      />
+    </div>
+
+    <div id="cook-results-body" ref="bodyRef" class="results-panel-body" :aria-busy="bodyVisible && rStore.isSearching" :style="{ opacity: bodyOpacity, visibility: bodyOpacity ? 'visible' : 'hidden' }">
+      <div v-if="desktop && !hasSelection && !rStore.loadError" class="results-panel-welcome">
+        <h3>从左侧选几样食材</h3>
+        <p>也可以只选厨具、饮食目标或专题，查看适合的菜谱。做法和难度可以继续缩小范围。</p>
+      </div>
+      <template v-else-if="bodyVisible && !rStore.loadError">
+        <div v-if="!browseMode && (rStore.isSearching || rStore.unlockSuggestions.length)" class="results-panel-unlock" aria-label="再补一样" :aria-hidden="rStore.isSearching || undefined">
+          <span class="results-panel-unlock-label">再补一样</span>
+          <div v-if="rStore.isSearching" class="results-panel-unlock-row">
+            <span v-for="item in 3" :key="item" class="results-panel-unlock-chip results-panel-unlock-placeholder" />
+          </div>
+          <TransitionGroup v-else name="unlock" tag="div" class="results-panel-unlock-row">
+            <button v-for="item in rStore.unlockSuggestions" :key="item.name" type="button" class="results-panel-unlock-chip" @click="addSuggestion(item.name)">
+              <ion-icon :icon="ioniconsAdd" aria-hidden="true" />{{ item.name }}<span>多 {{ item.count }} 道</span>
+            </button>
+          </TransitionGroup>
+        </div>
+
+        <ion-segment v-if="!browseMode" class="results-panel-segment" :disabled="rStore.isSearching" :value="String(active)" @ion-change="onGroupChange($event.detail.value)">
+          <ion-segment-button v-for="(group, index) in groups" :key="group.label" :value="String(index)">
+            <ion-label>
+              {{ group.label }} <span v-if="rStore.isSearching" class="results-panel-count-placeholder" aria-hidden="true" /><span v-else class="cook-num">{{ group.items.length }}</span>
+            </ion-label>
+          </ion-segment-button>
+        </ion-segment>
+
+        <div class="results-panel-scroll">
+          <ion-searchbar
+            v-if="desktop || detent === 'full'"
+            class="results-panel-search"
+            :value="rStore.keyword"
+            placeholder="在结果里找菜名"
+            :debounce="150"
+            show-clear-button="focus"
+            @ion-input="onKeyword"
+          />
+          <div class="results-panel-summary">
+            <span><span v-if="rStore.isSearching" class="results-panel-count-placeholder" aria-hidden="true" /><span v-else class="cook-num">{{ total }}</span> 道{{ browseMode ? '' : ` · ${groupHints[active]}` }}</span>
+            <ion-select
+              v-if="!browseMode"
+              class="results-panel-mode"
+              aria-label="匹配范围"
+              interface="popover"
+              :value="rStore.curMode"
+              @ion-change="onModeChange($event.detail.value)"
+            >
+              <ion-select-option v-for="option in modeOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </ion-select-option>
+            </ion-select>
+          </div>
+          <div v-if="rStore.activeDietaryGoalOption || rStore.activeDiscoverySceneOption || rStore.curTool || rStore.methodGroups.length || rStore.difficulty.length" class="results-panel-filter">
+            <button v-if="rStore.activeDietaryGoalOption" type="button" class="results-panel-filter-chip" :aria-label="`取消饮食目标：${rStore.activeDietaryGoalOption.label}`" @click="rStore.toggleDietaryGoal(rStore.activeDietaryGoalOption.id)">
+              目标：{{ rStore.activeDietaryGoalOption.label }}<ion-icon :icon="ioniconsClose" aria-hidden="true" />
+            </button>
+            <button v-if="rStore.activeDiscoverySceneOption" type="button" class="results-panel-filter-chip" :aria-label="`取消专题：${rStore.activeDiscoverySceneOption.label}`" @click="rStore.toggleDiscoveryScene(rStore.activeDiscoverySceneOption.id)">
+              专题：{{ rStore.activeDiscoverySceneOption.label }}<ion-icon :icon="ioniconsClose" aria-hidden="true" />
+            </button>
+            <button v-if="rStore.curTool" type="button" class="results-panel-filter-chip" :aria-label="`取消厨具筛选：${rStore.curTool}`" @click="rStore.toggleTools(rStore.curTool)">
+              厨具：{{ rStore.curTool }}<ion-icon :icon="ioniconsClose" aria-hidden="true" />
+            </button>
+            <button v-for="label in rStore.methodGroups" :key="label" type="button" class="results-panel-filter-chip" :aria-label="`取消做法筛选：${label}`" @click="rStore.toggleMethodGroup(label)">
+              做法：{{ label }}<ion-icon :icon="ioniconsClose" aria-hidden="true" />
+            </button>
+            <button v-for="level in rStore.difficulty" :key="level" type="button" class="results-panel-filter-chip" :aria-label="`取消难度筛选：${level}`" @click="rStore.toggleDifficulty(level)">
+              难度：{{ level }}<ion-icon :icon="ioniconsClose" aria-hidden="true" />
+            </button>
+          </div>
+
+          <ResultsSkeleton v-if="rStore.isSearching" :desktop="desktop" />
+          <Transition v-else :name="slideDirection > 0 ? 'results-slide-left' : 'results-slide-right'" mode="out-in">
+            <ion-list v-if="total" :key="browseMode ? 'browse' : active" :inset="true" class="results-panel-list">
+              <template v-if="browseMode">
+                <RecipeResultRow
+                  v-for="(recipe, i) in visibleBrowseRecipes"
+                  :key="recipe.id ?? `${recipe.bv}-${recipe.name}-${i}`"
+                  :recipe="recipe"
+                  :style="{ '--i': Math.min(i, 8) }"
+                  @select="emit('detail', recipe)"
+                />
+              </template>
+              <template v-else>
+                <RecipeResultRow
+                  v-for="(match, i) in visibleMatches"
+                  :key="match.sourceIndex"
+                  :recipe="match.recipe"
+                  :missing="match.missingStuff"
+                  :style="{ '--i': Math.min(i, 8) }"
+                  @select="emit('detail', match.recipe, match)"
+                />
+              </template>
+              <ion-item v-if="total > limit" :button="true" :detail="false" @click="limit += PAGE">
+                <ion-label color="primary">
+                  再看 {{ Math.min(PAGE, total - limit) }} 道（还有 {{ total - limit }} 道）
+                </ion-label>
+              </ion-item>
+            </ion-list>
+            <div v-else :key="`empty-${active}`" class="results-panel-empty">
+              <h3>{{ browseMode ? '当前条件下暂无已核对菜谱' : '这一组暂时没有菜' }}</h3>
+              <p>{{ rStore.keyword || rStore.curMode !== 'loose' ? '试试清除菜名或放宽匹配范围' : rStore.hasReviewedSelection ? '当前选择、忌口或厨具没有交集；不会自动扩大到普通目录。' : count ? '换个分组，或者再加几样食材' : '试试换成常见食材，或清除厨具筛选' }}</p>
+              <ion-button fill="clear" @click="goAdjust">
+                调整食材
+              </ion-button>
+            </div>
+          </Transition>
+
+          <p class="cook-group-footer results-panel-footnote">
+            <template v-if="rStore.hasReviewedSelection">
+              饮食目标和专题只从审核记录仍与当前做法一致的菜谱中取交集；详情会区分已核对图文与其他来源。
+            </template>
+            <template v-else>
+              只核对菜谱里记录的食材，西红柿算番茄、鸡翅算鸡肉；常备调料只在菜谱写明时算作已有。用量和调味以视频为准。
+            </template>
+          </p>
+        </div>
+      </template>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.results-panel {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px 12px 0 0;
+  background: var(--ion-background-color, #f2f2f6);
+  box-shadow:
+    0 -0.5px 0 var(--c-rule),
+    0 -6px 24px rgba(0, 0, 0, 0.08);
+  /* iOS 弹层的减速曲线 */
+  transition: transform 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+  will-change: transform;
+}
+.results-panel-head {
+  flex: none;
+  padding: 6px 16px 10px;
+  cursor: grab;
+}
+.results-panel-grabber {
+  width: 36px;
+  height: 5px;
+  margin: 0 auto 8px;
+  border-radius: 3px;
+  background: var(--c-rule-strong);
+}
+.results-panel-body {
+  transition: opacity 0.3s ease;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.results-panel-unlock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 10px 16px;
+}
+.results-panel-unlock-label {
+  flex: none;
+  font-size: 13px;
+  color: var(--c-ink-3);
+}
+.results-panel-unlock-row {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  padding-inline-end: 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.results-panel-unlock-row::-webkit-scrollbar {
+  display: none;
+}
+.results-panel-unlock-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  height: 30px;
+  padding: 0 12px 0 8px;
+  border-radius: 15px;
+  background: var(--c-brand-wash);
+  color: var(--c-brand-ink);
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.results-panel-unlock-chip span {
+  margin-inline-start: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.8;
+}
+.results-panel-unlock-placeholder {
+  width: 100px;
+  background: var(--cook-fill);
+}
+.results-panel-unlock-chip:active {
+  transform: scale(0.94);
+}
+.results-panel-segment {
+  flex: none;
+  width: auto;
+  margin: 0 16px;
+}
+.results-panel-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+.results-panel.is-dragging .results-panel-body {
+  transition: none;
+}
+.results-panel.is-full .results-panel-scroll {
+  overflow-y: auto;
+}
+.results-panel.is-desktop {
+  left: auto;
+  right: 16px;
+  bottom: 16px;
+  width: var(--cook-results-width);
+  border: 1px solid var(--c-rule);
+  border-radius: 10px;
+  background: var(--ion-item-background, #fff);
+  box-shadow: none;
+  transition: none;
+  will-change: auto;
+}
+.results-panel.is-desktop .results-panel-head {
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--c-rule);
+  cursor: default;
+}
+.results-panel.is-desktop .results-panel-scroll {
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.results-panel.is-desktop .results-panel-unlock-row {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.results-panel.is-desktop .results-panel-unlock {
+  align-items: flex-start;
+  padding-left: 14px;
+}
+.results-panel.is-desktop .results-panel-unlock-label {
+  padding-top: 6px;
+  font-size: 12px;
+}
+.results-panel.is-desktop .results-panel-unlock-chip {
+  height: 28px;
+  border-radius: 6px;
+  padding-inline: 7px;
+  font-size: 13px;
+}
+.results-panel.is-desktop .results-panel-segment {
+  margin-inline: 14px;
+}
+.results-panel.is-desktop ion-segment-button {
+  --color: var(--ion-text-color-step-400, #6d6d72);
+  --color-checked: var(--ion-text-color, #1c1c1e);
+  --indicator-color: var(--ion-item-background, #fff);
+  min-height: 28px;
+  font-size: 12px;
+}
+.results-panel.is-desktop .results-panel-search {
+  --background: var(--cook-fill);
+  --border-radius: 7px;
+  --box-shadow: none;
+}
+.results-panel.is-desktop .results-panel-summary {
+  padding: 8px 20px 0;
+  font-size: 12px;
+}
+.results-panel.is-desktop .results-panel-list {
+  margin-inline: 10px;
+  border-radius: 6px;
+}
+.results-panel.is-desktop :deep(.recipe-result-row) {
+  --min-height: 52px;
+  --padding-start: 10px;
+  --inner-padding-end: 10px;
+}
+.results-panel.is-desktop :deep(.recipe-result-row h3) {
+  font-size: 15px;
+  line-height: 20px;
+}
+.results-panel.is-desktop :deep(.recipe-result-thumb) {
+  width: 30px;
+  height: 30px;
+  margin-inline-end: 10px;
+  border-radius: 6px;
+  font-size: 18px;
+}
+.results-panel-welcome {
+  margin: auto;
+  max-width: 280px;
+  padding: 32px;
+  text-align: center;
+}
+.results-panel-welcome h3 {
+  margin: 0 0 8px;
+  color: var(--ion-text-color);
+  font-size: 16px;
+  font-weight: 600;
+}
+.results-panel-welcome p {
+  margin: 0;
+  color: var(--c-ink-2);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.results-panel-search {
+  padding: 10px 12px 0;
+}
+.results-panel-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 32px 0;
+  font-size: 13px;
+  color: var(--c-ink-2);
+  white-space: nowrap;
+}
+.results-panel-count-placeholder {
+  display: inline-block;
+  width: 20px;
+  height: 10px;
+  border-radius: 4px;
+  background: var(--cook-fill);
+  vertical-align: middle;
+}
+.results-panel-mode {
+  flex: none;
+  --padding-end: 0;
+  min-height: 32px;
+  font-size: 13px;
+  color: var(--ion-color-primary);
+}
+.results-panel-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 20px 0;
+}
+.results-panel-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px 0 12px;
+  border-radius: 14px;
+  background: var(--c-brand-wash);
+  color: var(--c-brand-ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+.results-panel .results-panel-list {
+  margin-top: 8px;
+  /* Keep these values ahead of Ionic's styles injected after the component mounts. */
+  padding-block: 0;
+  border-radius: 10px;
+}
+/* 展开或切换分组时，前几行依次浮现 */
+.results-panel-list :deep(.recipe-result-row) {
+  animation: results-row-in 0.36s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(var(--i, 0) * 24ms);
+}
+@keyframes results-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.results-panel-empty {
+  padding: 32px;
+  text-align: center;
+  color: var(--c-ink-3);
+}
+.results-panel-empty h3 {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ion-text-color, #000);
+}
+.results-panel-empty p {
+  margin: 0;
+  font-size: 15px;
+}
+.results-panel-footnote {
+  margin-top: 0;
+  padding-bottom: 24px;
+}
+
+/* 分段切换：列表按方向滑入 */
+.results-slide-left-enter-active,
+.results-slide-left-leave-active,
+.results-slide-right-enter-active,
+.results-slide-right-leave-active {
+  transition:
+    opacity 0.16s ease,
+    transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.results-slide-left-enter-from,
+.results-slide-right-leave-to {
+  opacity: 0;
+  transform: translateX(24px);
+}
+.results-slide-left-leave-to,
+.results-slide-right-enter-from {
+  opacity: 0;
+  transform: translateX(-24px);
+}
+
+.unlock-enter-active,
+.unlock-leave-active {
+  transition:
+    opacity 0.2s ease,
+    transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.unlock-enter-from,
+.unlock-leave-to {
+  opacity: 0;
+  transform: scale(0.85);
+}
+.unlock-leave-active {
+  position: absolute;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .results-panel,
+  .unlock-enter-active,
+  .unlock-leave-active {
+    transition: none;
+  }
+  .results-panel-list :deep(.recipe-result-row) {
+    animation: none;
+  }
+  .results-slide-left-enter-active,
+  .results-slide-left-leave-active,
+  .results-slide-right-enter-active,
+  .results-slide-right-leave-active {
+    transition: opacity 0.12s ease;
+  }
+  .results-slide-left-enter-from,
+  .results-slide-left-leave-to,
+  .results-slide-right-enter-from,
+  .results-slide-right-leave-to {
+    transform: none;
+  }
+}
+</style>

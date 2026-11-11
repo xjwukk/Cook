@@ -1,0 +1,34 @@
+# 方案记录
+
+记录项目里做过的重要决定：当时的问题、考虑过的方案、选了什么、为什么。之后想改方向时，先看这里，避免重复讨论。
+
+## 怎么写
+
+- 每个决定一个文件：`docs/decisions/NNNN-简短英文名.md`，编号递增。
+- 状态：提议中 / 已采纳 / 已废弃 / 被 NNNN 取代。改变决定时新写一篇并更新旧篇状态，不要直接改写旧结论。
+- 结构：背景、方案对比、决定、影响，写清楚取舍即可，不用长。
+
+## 列表
+
+| 编号                                                   | 标题                                 | 状态         |
+| ------------------------------------------------------ | ------------------------------------ | ------------ |
+| [0001](./0001-recipe-data)                             | 菜谱数据的来源、质量与反馈闭环       | 提议中       |
+| [0002](./0002-feedback-and-ids)                        | 菜谱固定 id、应用内反馈与筛选信号    | 已采纳       |
+| [0003](./0003-native-ios-monorepo)                     | 原生 iOS App 与 monorepo 结构        | 已采纳       |
+| [0004](./0004-ios-app-name)                            | iOS App 命名为「云食册」             | 已采纳       |
+| [0005](./0005-app-icon)                                | 应用图标「蒸汽成云」                 | 被 0020 取代 |
+| [0006](./0006-ios-bundle-id)                           | iOS App 使用 `fun.yunle.cook`        | 已采纳       |
+| [0007](./0007-ai-and-sentence-input)                   | AI 能力：先做整句识别，AI 只负责听懂 | 已采纳       |
+| [0008](./0008-ios-analytics)                           | iOS App 的数据统计与反馈             | 已采纳       |
+| [0009](./0009-text-recipes)                            | 支持图文做法，首批来自 HowToCook     | 提议中       |
+| [0010](./0010-recipe-quality-score)                    | 用视频质量分决定同组菜谱的先后       | 已采纳       |
+| [0011](./0011-fridge-reminders)                        | 冰箱食材与临期提醒                   | 已采纳       |
+| [0012](./0012-feedback-channels)                       | 反馈渠道分流                         | 已采纳       |
+| [0013](./0013-private-recipes)                         | 私人菜谱与跨端文件迁移               | 提议中       |
+| [0014](./0014-personal-catalog)                        | 个人食材和厨具                       | 已实施       |
+| [0015](./0015-product-site-domains)                    | 官网与网页版域名分工                 | 已采纳       |
+| [0016](./0016-native-android-and-capacitor-retirement) | 原生 Android 与 Capacitor 外壳退役   | 已采纳       |
+| [0017](./0017-offline-video-checks)                    | 离线视频校验与按需复核               | 已采纳       |
+| [0018](./0018-fridge-photo-intake)                     | 冰箱拍照录入与食用时间建议           | 已实施       |
+| [0019](./0019-warm-editorial-web-visual-direction)     | Web 视觉方向：温暖编辑式             | 已采纳       |
+| [0020](./0020-brand-rename-and-warm-editorial-tokens)  | 品牌更名「料理手帐」与手账插画 logo  | 已采纳       |

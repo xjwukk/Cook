@@ -1,0 +1,165 @@
+:root {
+  /* --ion-color-primary: #3880ff; */
+}
+
+/* Ionic Variables and Theming
+ * ---------------------------------------------------------------
+ * Any overrides to theme variables should be placed in this file.
+ * For more information, please see:
+ * http://ionicframework.com/docs/theming/
+ *
+ * 本文件只负责把 Ionic 变量映射到 css-vars.scss 的自有令牌，
+ * 不在这里定义颜色值本身。方向见 0019 方案记录。
+ */
+
+/* This sets a different item border color for the default theme on ios and md */
+:root {
+  --ion-item-border-color: var(--ion-background-color-step-200);
+}
+
+/* This sets a different background and item background for the default theme on ios */
+:root.ios {
+  --ion-background-color: var(--ion-background-color-step-50, #f2f2f6);
+  --ion-toolbar-background: var(--ion-background-color);
+  --ion-item-background: var(--c-surface);
+}
+
+/* This sets a different background and item background for the default theme on md */
+:root.md {
+  --ion-background-color: var(--ion-background-color-step-100, #f9f9f9);
+  --ion-toolbar-background: var(--ion-background-color);
+  --ion-item-background: var(--c-surface);
+}
+
+/* This sets a different item background when dark mode is enabled on ios and md */
+.ion-palette-dark.ios,
+.ion-palette-dark.md {
+  --ion-item-background: var(--c-surface);
+}
+
+/* custom */
+html {
+  /* --ion-safe-area-top: 0px; */
+}
+
+/* 云乐坊 App 容器：工具栏右侧给悬浮胶囊让位 */
+.in-yunle-app ion-header ion-toolbar {
+  --padding-end: max(var(--cook-host-capsule-inset, 0px), 4px);
+}
+
+/* 纸面与墨色阶：替换 Ionic 默认的冷灰蓝阶 */
+:root {
+  --ion-background-color-step-50: #fdfaf5;
+  --ion-background-color-step-100: #f9f3ea;
+  --ion-background-color-step-150: #f5ede1;
+  --ion-background-color-step-200: #efe6d8;
+  --ion-background-color-step-250: #e9dfcf;
+  --ion-background-color-step-300: #e3d8c7;
+  --ion-background-color-step-400: #b3a795;
+  --ion-background-color-step-500: #94877b;
+  --ion-background-color-step-600: #6b6058;
+  --ion-background-color-step-700: #4a423b;
+  --ion-background-color-step-800: #2a2622;
+
+  --ion-text-color-step-100: #fdfaf5;
+  --ion-text-color-step-200: #efe6d8;
+  --ion-text-color-step-300: #d3c3aa;
+  --ion-text-color-step-400: #94877b;
+  --ion-text-color-step-500: #7d7064;
+  --ion-text-color-step-600: #6b6058;
+  --ion-text-color-step-700: #4a423b;
+  --ion-text-color-step-800: #2a2622;
+}
+
+/* 交互主色：深陶土橙。Ionic 把它同时用作文字色（链接、标签、选中项），
+ * 因此取能通过正文对比度的 --c-brand-ink；鲜艳的 --c-brand 只用于填充（印章态、主按钮底）。
+ * 填充态请显式写 var(--c-brand)。 */
+:root {
+  --ion-color-primary: var(--c-brand-ink);
+  --ion-color-primary-rgb: 154, 63, 30;
+  --ion-color-primary-contrast: #fff7f0;
+  --ion-color-primary-contrast-rgb: 255, 247, 240;
+  --ion-color-primary-shade: #8e3a1c;
+  --ion-color-primary-tint: #a64f2f;
+
+  --ion-background-color: var(--c-paper);
+  --ion-text-color: var(--c-ink);
+  --ion-toolbar-background: var(--c-paper);
+  --ion-item-background: var(--c-surface);
+  --ion-font-family: var(--font-sans);
+}
+
+.ion-palette-dark {
+  --ion-background-color-step-50: #1b1611;
+  --ion-background-color-step-100: #201a15;
+  --ion-background-color-step-150: #262019;
+  --ion-background-color-step-200: #2a231c;
+  --ion-background-color-step-250: #332b22;
+  --ion-background-color-step-300: #362c23;
+  --ion-background-color-step-400: #6f6459;
+  --ion-background-color-step-500: #8c7e6e;
+  --ion-background-color-step-600: #bfb1a1;
+  --ion-text-color-step-100: #17130f;
+  --ion-text-color-step-200: #201a15;
+  --ion-text-color-step-300: #2a231c;
+  --ion-text-color-step-400: #8c7e6e;
+  --ion-text-color-step-500: #a89b8c;
+  --ion-text-color-step-600: #bfb1a1;
+  --ion-text-color-step-700: #ded2c2;
+  --ion-text-color-step-800: #f3ebe0;
+
+  --ion-color-primary: var(--c-brand-ink);
+  --ion-color-primary-rgb: 240, 168, 124;
+  --ion-color-primary-contrast: #2a2622;
+  --ion-color-primary-contrast-rgb: 42, 38, 34;
+  --ion-color-primary-shade: #dd9b72;
+  --ion-color-primary-tint: #f2ae82;
+}
+
+/* iOS 分组列表的组标题和组脚注 */
+.cook-group-header {
+  margin: 24px 0 0;
+  padding: 0 calc(16px + 20px) 6px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  color: var(--ion-text-color-step-400, #6d6d72);
+}
+
+.cook-group-header + ion-list.list-inset {
+  margin-top: 0;
+}
+
+.cook-group-footer {
+  margin: -8px 0 0;
+  padding: 0 calc(16px + 20px);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ion-text-color-step-400, #6d6d72);
+}
+
+/* 系统填充色与提示色：填充改成暖墨色，提示色用琥珀以区分陶土橙主色 */
+:root {
+  --cook-fill: rgb(122 96 74 / 10%);
+  --cook-warn: var(--c-warn);
+}
+
+.ion-palette-dark {
+  --cook-fill: rgb(226 210 190 / 16%);
+  --cook-warn: var(--c-warn);
+}
+
+/* 搜索框：下沉纸面 + 墨线边框，替代 Ionic 默认的冷灰填充 */
+ion-searchbar {
+  --background: var(--c-paper-sunk);
+  --box-shadow: inset 0 0 0 1px var(--c-rule);
+  --border-radius: var(--r-md);
+  --color: var(--c-ink);
+  --placeholder-color: var(--c-ink-3);
+  --search-icon-color: var(--c-ink-3);
+  --clear-button-color: var(--c-ink-3);
+}
+
+ion-searchbar:focus-within {
+  --box-shadow: inset 0 0 0 1px var(--c-brand);
+}

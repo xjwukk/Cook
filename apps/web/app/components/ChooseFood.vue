@@ -1,0 +1,412 @@
+<script lang="ts" setup>
+import type { MaybeElementRef } from '@vueuse/core'
+import type { StuffItem } from '~/types'
+import { useStorage } from '@vueuse/core'
+import { DIFFICULTY_LEVELS, METHOD_GROUPS } from '@yunyoujun/cook/recommend'
+import { useEmojiAnimation } from '~/composables/animation'
+import { useIncompatibleFoods } from '~/composables/incompatible-foods'
+import { namespace } from '~/constants'
+import { categoryIcons } from '~/data/categoryIcons'
+import { methodIcons, toolIcons } from '~/data/cookingIcons'
+import { pantryOptions } from '~/data/pantry'
+import { trackCookEvent } from '~/utils/analytics'
+import { yunleHaptic } from '~/utils/yunleHost'
+
+const props = defineProps<{
+  desktop?: boolean
+  /** 选中食材时 emoji 飞向的位置（结果预览条） */
+  flightTarget?: MaybeElementRef
+}>()
+
+const rStore = useRecipeStore()
+const selected = computed(() => rStore.selectedStuff)
+const pantryOpen = ref(false)
+const avoidOpen = ref(false)
+
+// 食物相克检测
+const { warningMessage, hasWarning, checkIncompatibility } = useIncompatibleFoods()
+watch(selected, checkIncompatibility, { deep: true })
+onMounted(() => {
+  if (selected.value.length)
+    checkIncompatibility(selected.value)
+})
+
+const { playAnimation } = useEmojiAnimation(computed(() => unref(props.flightTarget)))
+
+const { sections, food } = usePersonalCatalog()
+const tools = computed<StuffItem[]>(() => {
+  const visible = food.value.tools
+  return rStore.curTool && !visible.some(item => item.name === rStore.curTool)
+    ? [...visible, { name: rStore.curTool, emoji: '🍳' }]
+    : visible
+})
+
+/** 展开了「更多」的分组，记住用户的选择 */
+const expanded = useStorage<string[]>(`${namespace}:food-more-expanded`, [])
+
+/** 常用食材先展示，已选项始终可见；保留用户主动展开的偏好。 */
+const visibleSections = computed(() => sections.value.map((section) => {
+  const isExpanded = expanded.value.includes(section.category)
+  const common = section.items.filter(item => !item.more).slice(0, props.desktop ? 12 : 6)
+  const commonNames = new Set(common.map(item => item.name))
+  const visible = isExpanded
+    ? section.items
+    : section.items.filter(item => commonNames.has(item.name) || selected.value.includes(item.name))
+  return { ...section, visible, isExpanded, hiddenCount: section.items.length - visible.length }
+}))
+
+function toggleMore(category: string) {
+  expanded.value = expanded.value.includes(category)
+    ? expanded.value.filter(c => c !== category)
+    : [...expanded.value, category]
+}
+
+function selectedNote(items: StuffItem[]) {
+  const count = items.filter(item => selected.value.includes(item.name)).length
+  return count ? `已选 ${count} 种` : ''
+}
+
+function toggleStuff(item: StuffItem, category: string, e: Event) {
+  rStore.toggleStuff(item.name)
+  if (selected.value.includes(item.name)) {
+    const origin = e.currentTarget as Element | null
+    void nextTick(() => playAnimation(item.emoji, origin))
+    void yunleHaptic('light')
+  }
+
+  trackCookEvent('click_stuff')
+}
+
+function clickTool(item: StuffItem) {
+  rStore.clickTool(item)
+  void yunleHaptic('light')
+}
+</script>
+
+<template>
+  <div class="choose-food" :class="{ 'choose-food-desktop': desktop }">
+    <IngredientInput
+      :selected="selected"
+      :parse="rStore.parseText"
+      placeholder="输入食材或一句话"
+      @add="rStore.addStuff"
+      @remove="rStore.toggleStuff"
+      @apply="rStore.applyQuery"
+    />
+
+    <div class="choose-food-categories">
+      <IngredientSection v-for="section in visibleSections" :key="section.category" :title="section.title" :icon="categoryIcons[section.category]" :note="selectedNote(section.items)">
+        <template #actions>
+          <button
+            v-if="section.isExpanded || section.hiddenCount > 0"
+            type="button"
+            class="choose-food-more"
+            :aria-label="`${section.isExpanded ? '收起' : '展开全部'}${section.title}`"
+            :aria-expanded="section.isExpanded"
+            @click="toggleMore(section.category)"
+          >
+            {{ section.isExpanded ? '收起' : `全部 ${section.items.length}` }}
+            <ion-icon :icon="section.isExpanded ? ioniconsChevronUp : ioniconsChevronDown" aria-hidden="true" />
+          </button>
+        </template>
+        <IngredientChip
+          v-for="item in section.visible"
+          :key="item.name"
+          :label="item.name"
+          :emoji="item.emoji"
+          :selected="selected.includes(item.name)"
+          @click="toggleStuff(item, section.category, $event)"
+        />
+      </IngredientSection>
+    </div>
+
+    <IngredientSection title="厨具（可选）" :icon="categoryIcons.tools" :note="rStore.curTool ? '已选' : ''">
+      <template #actions>
+        <NuxtLink class="choose-food-manage" to="/catalog">
+          管理食材和厨具
+        </NuxtLink>
+      </template>
+      <IngredientChip
+        v-for="item in tools"
+        :key="item.name"
+        :label="item.name === '一口大锅' ? '炒锅' : (item.label || item.name)"
+        :icon="toolIcons[item.name] || item.icon"
+        :selected="rStore.curTool === item.name"
+        @click="clickTool(item)"
+      />
+    </IngredientSection>
+
+    <IngredientSection title="做法（可选）" :icon="categoryIcons.method" :note="rStore.methodGroups.length ? '只看这些做法' : ''">
+      <IngredientChip
+        v-for="group in METHOD_GROUPS"
+        :key="group.label"
+        :label="group.label"
+        :icon="methodIcons[group.label]"
+        :selected="rStore.methodGroups.includes(group.label)"
+        @click="rStore.toggleMethodGroup(group.label)"
+      />
+    </IngredientSection>
+
+    <IngredientSection title="难度（可选）" :icon="categoryIcons.difficulty" :note="rStore.difficulty.length ? '没标难度的菜会被隐藏' : ''">
+      <IngredientChip
+        v-for="level in DIFFICULTY_LEVELS"
+        :key="level"
+        :label="level"
+        :selected="rStore.difficulty.includes(level)"
+        @click="rStore.toggleDifficulty(level)"
+      />
+    </IngredientSection>
+
+    <IngredientSection v-if="desktop" title="家里常备" :icon="categoryIcons.pantry" :note="`已选 ${rStore.selectedPantry.length} 种调料`">
+      <IngredientChip
+        v-for="name in pantryOptions"
+        :key="name"
+        :label="name"
+        :selected="rStore.selectedPantry.includes(name)"
+        @click="rStore.togglePantry(name)"
+      />
+      <div class="choose-food-pantry-actions">
+        <button type="button" @click="rStore.resetPantry">
+          恢复默认
+        </button>
+        <button type="button" :disabled="!rStore.selectedPantry.length" @click="rStore.clearPantry">
+          全部取消
+        </button>
+      </div>
+    </IngredientSection>
+    <p v-if="desktop" class="cook-group-footer choose-food-pantry-note">
+      只在菜谱明确列出时算作已有，不会额外增加必需的材料。
+    </p>
+
+    <h2 class="cook-group-header choose-food-preferences-heading">
+      <IngredientSectionLabel :title="desktop ? '忌口' : '调料和忌口'" :icon="desktop ? categoryIcons.avoid : categoryIcons.pantry" />
+    </h2>
+    <ion-list :inset="true" class="choose-food-pantry">
+      <ion-item v-if="!desktop" :button="true" @click="pantryOpen = true">
+        <ion-label>家里常备</ion-label>
+        <ion-note slot="end" class="choose-food-pantry-value">
+          {{ rStore.selectedPantry.length ? rStore.selectedPantry.join('、') : '未选择' }}
+        </ion-note>
+      </ion-item>
+      <ion-item :button="true" @click="avoidOpen = true">
+        <ion-label>忌口</ion-label>
+        <ion-note slot="end" class="choose-food-pantry-value">
+          {{ rStore.selectedAvoid.length ? rStore.selectedAvoid.join('、') : '无' }}
+        </ion-note>
+      </ion-item>
+      <ion-item>
+        <ion-toggle v-model="rStore.noSpicy" justify="space-between">
+          不吃辣
+        </ion-toggle>
+      </ion-item>
+    </ion-list>
+
+    <PantrySheet
+      v-model:open="pantryOpen"
+      :selected="rStore.selectedPantry"
+      @toggle="rStore.togglePantry"
+      @clear="rStore.clearPantry"
+      @reset="rStore.resetPantry"
+    />
+
+    <AvoidSheet
+      v-model:open="avoidOpen"
+      :selected="rStore.selectedAvoid"
+      @toggle="rStore.toggleAvoid"
+      @clear="rStore.clearAvoid"
+    />
+
+    <ion-toast
+      class="incompatible-warning-toast"
+      header="食物相克提醒"
+      :message="warningMessage"
+      :is-open="hasWarning"
+      position="top"
+      :icon="ioniconsWarningOutline"
+    />
+  </div>
+</template>
+
+<style scoped>
+.choose-food-preferences-heading {
+  display: flex;
+  align-items: center;
+}
+.choose-food {
+  --ingredient-chip-font-size: var(--fs-base);
+  --ingredient-chip-mark-size: 26px;
+  --ingredient-chip-padding-block: 7px;
+  --ingredient-chip-padding-inline: 13px;
+  --ingredient-chip-padding-inline-start: 8px;
+  --ingredient-chip-radius: var(--r-pill);
+  --ingredient-chip-gap: 6px;
+  --ingredient-section-heading-margin: 8px 0 0;
+  --ingredient-section-heading-min-height: 44px;
+  --ingredient-section-heading-padding: 0 24px;
+  --ingredient-section-padding: 8px;
+  --ingredient-section-gap: 4px;
+  padding-bottom: 24px;
+}
+.choose-food-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ion-color-primary);
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+}
+.choose-food-more:focus-visible {
+  outline: 2px solid var(--ion-color-primary);
+  outline-offset: 2px;
+}
+.choose-food-more ion-icon {
+  width: 12px;
+  height: 12px;
+}
+.choose-food-manage {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--ion-color-primary);
+  font-size: 13px;
+  font-weight: 400;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.choose-food-manage:hover {
+  text-decoration: underline;
+}
+.choose-food-manage:focus-visible {
+  outline: 2px solid var(--ion-color-primary);
+  outline-offset: 2px;
+}
+.choose-food-pantry-value {
+  max-width: 60vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 17px;
+}
+.choose-food-desktop {
+  --ingredient-chip-height: 30px;
+  --ingredient-chip-padding-block: 3px;
+  --ingredient-chip-padding-inline: 10px;
+  --ingredient-chip-padding-inline-start: 4px;
+  --ingredient-chip-radius: var(--r-pill);
+  --ingredient-chip-font-size: var(--fs-sm);
+  --ingredient-chip-mark-size: 20px;
+  --ingredient-section-heading-margin: 8px 0 0;
+  --ingredient-section-heading-padding: 0 2px;
+  --ingredient-section-heading-color: var(--ion-text-color);
+  --ingredient-section-heading-weight: 600;
+  --ingredient-section-gap: 6px;
+  --ingredient-section-margin: 0;
+  --ingredient-section-padding: 10px;
+  --ingredient-section-radius: 10px;
+  padding: 0 16px 24px;
+}
+.choose-food-desktop .choose-food-categories {
+  gap: 0 14px;
+}
+.choose-food-desktop .choose-food-pantry-value {
+  max-width: 60%;
+  font-size: 14px;
+}
+.choose-food-desktop > .cook-group-header {
+  margin-top: 18px;
+  padding: 0 2px 7px;
+  color: var(--ion-text-color);
+  font-weight: 600;
+}
+.choose-food-desktop .choose-food-pantry {
+  margin: 0;
+  border: 1px solid var(--c-rule);
+  border-radius: 10px;
+}
+.choose-food-desktop .choose-food-pantry ion-item {
+  --min-height: 38px;
+  font-size: 14px;
+}
+.choose-food-desktop .choose-food-pantry-actions button {
+  min-height: 30px;
+  font-size: 13px;
+}
+.choose-food-desktop .choose-food-pantry-note {
+  padding: 0 2px;
+  font-size: 12px;
+}
+.choose-food-desktop :deep(.ingredient-input-field) {
+  --border-radius: 7px;
+  padding-inline: 0;
+}
+.choose-food-desktop :deep(.ingredient-input-row) {
+  flex-wrap: wrap;
+  padding-inline: 0;
+}
+.choose-food-desktop :deep(.ingredient-token) {
+  height: 26px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.choose-food-desktop :deep(.ingredient-token::after),
+.choose-food-desktop :deep(.ingredient-suggestion::after) {
+  inset: -9px 0;
+}
+.choose-food-pantry-actions {
+  display: flex;
+  flex-basis: 100%;
+  gap: 16px;
+}
+.choose-food-pantry-actions button {
+  min-height: 44px;
+  color: var(--ion-color-primary);
+  font-size: 14px;
+}
+.choose-food-pantry-actions button:disabled {
+  opacity: 0.4;
+}
+.choose-food-pantry-actions button:focus-visible {
+  outline: 2px solid var(--ion-color-primary);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.choose-food-pantry-note {
+  margin-top: 10px;
+}
+@media (pointer: coarse) {
+  .choose-food-desktop {
+    --ingredient-chip-height: 44px;
+    --ingredient-chip-surface-inset: 6px;
+  }
+}
+@media (min-width: 1200px) {
+  .choose-food-desktop .choose-food-categories {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+  .choose-food-desktop .choose-food-categories > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+</style>
+
+<style>
+ion-toast.incompatible-warning-toast {
+  --background: rgba(255, 237, 213, 0.96);
+  --color: #7c2d12;
+  --box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+.ion-palette-dark ion-toast.incompatible-warning-toast {
+  --background: rgba(67, 32, 10, 0.96);
+  --color: #fed7aa;
+}
+</style>

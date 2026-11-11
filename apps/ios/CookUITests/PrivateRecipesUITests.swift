@@ -1,0 +1,100 @@
+import XCTest
+
+final class PrivateRecipesUITests: XCTestCase {
+    @MainActor
+    func testPrivateRecipeCreateEditDelete() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = XCUIApplication.standardCookingLaunchArguments + ["-ui-testing-reset-consent"]
+        app.launchEnvironment["COOK_UI_TEST_DECLINE_CONSENT"] = "1"
+        app.launchEnvironment["COOK_SKIP_CLOUDKIT_SCHEMA"] = "1"
+        app.launch()
+        // iPad's floating tab bar exposes both its wrapper and child as the same button.
+        // Select the first matching tab, then verify navigation by waiting for the library.
+        let mine = app.buttons.matching(identifier: "我的").firstMatch
+        XCTAssertTrue(mine.waitForExistence(timeout: 30))
+        mine.tap()
+        let library = app.buttons["我的菜谱"]
+        XCTAssertTrue(library.waitForExistence(timeout: 10))
+        library.tap()
+        app.buttons["新建菜谱"].tap()
+        let name = "番茄炒蛋"
+        let nameField = app.textFields["菜名（最多 30 字）"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 10))
+        nameField.tap()
+        nameField.typeText(name)
+        let ingredients = app.textFields["鸡蛋、丝瓜"]
+        ingredients.tap()
+        ingredients.typeText("番茄、鸡蛋")
+        app.buttons["保存"].tap()
+        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", name)).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "New context saves must update the live @Query list")
+        // Compact layouts use the system search field; wide layouts use a toolbar
+        // text field. Both must filter the live list and restore it after clearing.
+        let systemSearch = app.searchFields["菜名或食材"]
+        let search = systemSearch.exists ? systemSearch : app.textFields["菜名或食材"]
+        XCTAssertTrue(search.waitForExistence(timeout: 10))
+        search.tap()
+        search.typeText("不存在的食材")
+        let hiddenRow = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: row)
+        XCTAssertEqual(XCTWaiter().wait(for: [hiddenRow], timeout: 10), .completed)
+        let clear = app.buttons["清除搜索"]
+        if clear.exists {
+            clear.tap()
+        } else {
+            search.tap()
+            search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "不存在的食材".count))
+        }
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "Clearing the query must restore saved recipes")
+        // An empty system search disables Return on iPhone. Close that search
+        // explicitly; the iPad toolbar field dismisses its keyboard on submit.
+        if systemSearch.exists {
+            let closeSearch = app.buttons.matching(NSPredicate(format: "label IN %@", ["关闭", "取消"])).firstMatch
+            XCTAssertTrue(closeSearch.waitForExistence(timeout: 10))
+            closeSearch.tap()
+        } else {
+            search.tap()
+            search.typeText("\n")
+        }
+        let searchKeyboardHidden = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.keyboards.firstMatch)
+        XCTAssertEqual(XCTWaiter().wait(for: [searchKeyboardHidden], timeout: 30), .completed)
+        let listScreenshot = XCTAttachment(screenshot: app.screenshot())
+        listScreenshot.name = "ios-private-recipes"
+        listScreenshot.lifetime = .keepAlways
+        add(listScreenshot)
+        let rowReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isHittable == true"), object: row)
+        XCTAssertEqual(XCTWaiter().wait(for: [rowReady], timeout: 30), .completed)
+        row.tap()
+        XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 10), "Opening a saved recipe must reach its detail page")
+        let detailScreenshot = XCTAttachment(screenshot: app.screenshot())
+        detailScreenshot.name = "ios-private-detail"
+        detailScreenshot.lifetime = .keepAlways
+        add(detailScreenshot)
+        let edit = app.buttons["编辑菜谱"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 10))
+        edit.tap()
+        XCTAssertTrue(nameField.waitForExistence(timeout: 10))
+        nameField.tap()
+        nameField.typeText("新")
+        // On iPad the keyboard moves the sheet after typing. Submit the single-line
+        // field and wait for it to close before XCTest resolves the Save button's frame.
+        nameField.typeText("\n")
+        let keyboardHidden = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.keyboards.firstMatch)
+        XCTAssertEqual(XCTWaiter().wait(for: [keyboardHidden], timeout: 30), .completed)
+        app.buttons["保存"].tap()
+        XCTAssertTrue(app.navigationBars[name + "新"].waitForExistence(timeout: 10))
+        app.buttons["删除菜谱"].tap()
+        // The dialog can enter the accessibility tree before presentation finishes
+        // on a loaded runner. Do not send the destructive tap until it is hittable.
+        let confirmation = app.sheets["删除这道私人菜谱？"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 10))
+        let confirmDelete = confirmation.buttons["删除"]
+        let confirmationReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isHittable == true"), object: confirmDelete)
+        XCTAssertEqual(XCTWaiter().wait(for: [confirmationReady], timeout: 30), .completed)
+        confirmDelete.tap()
+        let confirmationClosed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: confirmation)
+        XCTAssertEqual(XCTWaiter().wait(for: [confirmationClosed], timeout: 10), .completed, "Deletion must dismiss its confirmation before returning to the library")
+        XCTAssertTrue(app.navigationBars["我的菜谱"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", name)).firstMatch.exists)
+    }
+}

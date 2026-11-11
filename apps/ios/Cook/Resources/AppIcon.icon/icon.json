@@ -1,0 +1,30 @@
+{
+  "fill": {
+    "solid-color": {
+      "red": "0.98431",
+      "green": "0.96863",
+      "blue": "0.94118"
+    }
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "logo.png",
+          "name": "logo"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.35
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}

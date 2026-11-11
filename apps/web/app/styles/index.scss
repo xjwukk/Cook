@@ -1,0 +1,92 @@
+@use './animation.scss';
+// markdown
+@use './markdown.scss';
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+
+  background: var(--c-paper);
+}
+
+input:focus:not(:focus-visible) {
+  outline: none;
+}
+
+#nprogress {
+  pointer-events: none;
+}
+
+#nprogress .bar {
+  background: var(--c-brand);
+  opacity: 0.85;
+  position: fixed;
+  z-index: 1031;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+}
+
+html {
+  color: var(--c-ink);
+  background-color: var(--c-paper);
+  font-family: var(--font-sans);
+
+  scroll-behavior: smooth;
+
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+a {
+  color: var(--c-ink);
+}
+
+/* 可见焦点：键盘用户必须能看清自己在哪 */
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--c-brand);
+  outline-offset: 2px;
+}
+
+button {
+  outline: none;
+
+  &:focus,
+  &:active {
+    outline: none;
+  }
+}
+
+hr {
+  opacity: 0.1;
+}
+
+.tag,
+.tagSize {
+  margin: 4px;
+  padding: 2px 4px;
+  // border: 1px solid var(--c-ink);
+}
+
+/* 编辑式排版点缀：衬线只用于拉丁字母与数字，中文字形不受影响 */
+.cook-num {
+  font-family: var(--font-display);
+  font-variant-numeric: lining-nums tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.cook-eyebrow {
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--c-ink-3);
+}

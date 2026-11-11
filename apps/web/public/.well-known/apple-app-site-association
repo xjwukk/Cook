@@ -1,0 +1,18 @@
+{
+  "webcredentials": {
+    "apps": [
+      "QT792GAY4C.fun.yunle.cook"
+    ]
+  },
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "QT792GAY4C.fun.yunle.cook",
+        "paths": [
+          "/auth/wechat/*"
+        ]
+      }
+    ]
+  }
+}

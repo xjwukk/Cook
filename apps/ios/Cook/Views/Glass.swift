@@ -1,0 +1,131 @@
+import SwiftUI
+
+// iOS 26 起用 Liquid Glass，旧系统（最低 iOS 17）退回到原来的样式。
+// 按 HIG：玻璃只用在浮在内容上面的控件（底部按钮、提示条），菜谱卡片这类内容本身不用。
+
+extension View {
+    /// 自定义固定栏参与系统滚动边缘效果；旧系统继续使用材质背景。
+    @ViewBuilder
+    func scrollEdgeBar<Bar: View>(edge: VerticalEdge, @ViewBuilder content: () -> Bar) -> some View {
+        if #available(iOS 26.0, *) {
+            safeAreaBar(edge: edge, spacing: 0, content: content)
+        } else {
+            safeAreaInset(edge: edge, spacing: 0) {
+                content().background(.bar)
+            }
+        }
+    }
+
+    /// 固定栏使用系统柔和边缘；没有工具栏的底端按剩余内容显示渐隐。
+    @ViewBuilder
+    func softScrollEdges(enabled: Bool = true) -> some View {
+        if !enabled {
+            self
+        } else if #available(iOS 26.0, *) {
+            scrollEdgeEffectStyle(.soft, for: .vertical)
+                .modifier(ScrollBottomFade())
+        } else {
+            modifier(ScrollBottomFade())
+        }
+    }
+
+    /// 页面底部的主按钮
+    @ViewBuilder
+    func prominentButtonStyle() -> some View {
+        if #available(iOS 26.0, *) {
+            buttonStyle(.glassProminent)
+        } else {
+            buttonStyle(.borderedProminent)
+        }
+    }
+
+    /// 底部固定的操作栏。iOS 26 用 safeAreaBar，系统会给下面滚过的内容加渐隐的边缘效果；
+    /// 旧系统垫一层和背景同色的渐变，免得半透明的按钮和列表叠在一起
+    func bottomActionBar<Bar: View>(background: Color? = nil, @ViewBuilder _ bar: @escaping () -> Bar) -> some View {
+        modifier(BottomActionBar(background: background, bar: bar))
+    }
+
+    /// 浮在图片上的小控件（关闭按钮、页码、图片说明）。iOS 26 用玻璃，能点的加上按压反馈；旧系统用磨砂材质
+    @ViewBuilder
+    func floatingGlass(in shape: some Shape, interactive: Bool = false) -> some View {
+        if #available(iOS 26.0, *) {
+            glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
+        } else {
+            background(.ultraThinMaterial, in: shape)
+        }
+    }
+
+    /// iOS 26 起在下滑时把 Tab 栏收小，给内容多留地方
+    @ViewBuilder
+    func minimizesTabBarOnScroll() -> some View {
+        if #available(iOS 26.0, *) {
+            tabBarMinimizeBehavior(.onScrollDown)
+        } else {
+            self
+        }
+    }
+}
+
+private struct ScrollBottomFade: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @State private var hasMoreBelow = false
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.contentOffset.y + geometry.containerSize.height
+                        < geometry.contentSize.height + geometry.contentInsets.bottom - 1
+                } action: { _, hasMore in
+                    hasMoreBelow = hasMore
+                }
+                .overlay(alignment: .bottom) {
+                    if hasMoreBelow && !reduceTransparency {
+                        let background = Color(uiColor: .systemGroupedBackground)
+                        LinearGradient(colors: [background.opacity(0), background], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 24)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+                }
+        } else {
+            content
+        }
+    }
+}
+
+private struct BottomActionBar<Bar: View>: ViewModifier {
+    let background: Color?
+    let bar: () -> Bar
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.safeAreaBar(edge: .bottom) {
+                bar()
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+                    .background {
+                        if let background {
+                            background.ignoresSafeArea(.container, edges: .bottom)
+                        }
+                    }
+            }
+        } else {
+            content.safeAreaInset(edge: .bottom) {
+                bar()
+                    .padding(.horizontal)
+                    .padding(.top, 16)
+                    .padding(.bottom, 8)
+                    .background {
+                        let background = background ?? Color(uiColor: .systemGroupedBackground)
+                        VStack(spacing: 0) {
+                            LinearGradient(colors: [background.opacity(0), background], startPoint: .top, endPoint: .bottom)
+                                .frame(height: 16)
+                            background
+                        }
+                        .ignoresSafeArea(edges: .bottom)
+                    }
+            }
+        }
+    }
+}

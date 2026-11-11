@@ -1,0 +1,125 @@
+/* we will explain what these classes do next! */
+.v-enter-active,
+.v-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.v-enter-from,
+.v-leave-to {
+  opacity: 0;
+}
+
+$ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+$ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+@media (hover: hover) {
+  a.dish-tag:hover {
+    transform: translateY(-1px);
+  }
+}
+
+// 列表行删除：离开的行淡出并右移，剩下的行用 FLIP 位移补位（只动 transform / opacity）
+.cook-row-group {
+  position: relative;
+}
+
+.cook-row-move,
+.cook-row-leave-active {
+  transition:
+    transform 0.32s $ease-out,
+    opacity 0.24s ease;
+}
+
+.cook-row-leave-active {
+  position: absolute;
+  inset-inline: 0;
+}
+
+.cook-row-leave-to {
+  opacity: 0;
+  transform: translateX(-24px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cook-row-move,
+  .cook-row-leave-active {
+    transition: opacity 0.15s ease;
+  }
+
+  .cook-row-leave-to {
+    transform: none;
+  }
+
+  a.dish-tag:hover {
+    transform: none;
+  }
+}
+
+// scrollbar
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  border-radius: 2px;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 2px;
+  background-color: rgba(122, 122, 122, 0.3);
+
+  &:window-inactive {
+    background-color: rgba(122, 122, 122, 0.3);
+  }
+
+  &:hover {
+    background-color: rgba(122, 122, 122, 0.7);
+  }
+
+  &:active {
+    background-color: rgba(122, 122, 122, 0.9);
+  }
+}
+
+// 空状态：居中的大图标 + 标题 + 说明
+.cook-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 25vh 32px 0;
+  text-align: center;
+  color: var(--c-ink-3);
+  animation: cook-fade-up 0.4s $ease-out both;
+
+  ion-icon {
+    font-size: 56px;
+    opacity: 0.6;
+  }
+
+  h3 {
+    margin: 16px 0 6px;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--ion-text-color, #000);
+  }
+
+  p {
+    margin: 0;
+    font-size: 15px;
+  }
+}
+
+@keyframes cook-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cook-empty {
+    animation: none;
+  }
+}

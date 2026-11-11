@@ -1,0 +1,32 @@
+// @ts-check
+import antfu from '@antfu/eslint-config'
+import nuxt from './apps/web/.nuxt/eslint.config.mjs'
+
+export default nuxt(
+  antfu(
+    {
+      unocss: true,
+      formatters: true,
+    },
+    {
+      ignores: [
+        'packages/data/**/*.json',
+        'cloudfunctions/cook-user-data/user-data.cjs',
+        // 构建、验收和审查报告保留原句与机器输出；数据源另有 schema/锚点校验。
+        'artifacts/**',
+        'apps/web/public/**/*',
+        'node_modules/**/*',
+        '**/.nuxt/**/*',
+        '**/.output/**/*',
+        '**/dist/**/*',
+        // 外部引入的第三方 skill，保留上游写法不做风格改写。
+        'skills/frontend-design-direction/**',
+      ],
+    },
+    {
+      rules: {
+        'vue/no-deprecated-slot-attribute': 'off',
+      },
+    },
+  ),
+)

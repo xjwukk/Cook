@@ -1,0 +1,60 @@
+<script lang="ts" setup>
+/**
+ * iOS 分组：灰色小标题 + 白色圆角卡片，卡片里是一组可换行的按钮
+ */
+defineProps<{
+  title: string
+  /** Decorative symbol; the title remains the accessible category label. */
+  icon?: string
+  /** 标题右侧的说明，例如「已选 2 种」 */
+  note?: string
+}>()
+</script>
+
+<template>
+  <section class="ingredient-section" :aria-label="title">
+    <h2 class="cook-group-header ingredient-section-header">
+      <IngredientSectionLabel :title="title" :icon="icon" />
+      <span v-if="note || $slots.actions" class="ingredient-section-actions">
+        <span v-if="note" class="ingredient-section-note">{{ note }}</span>
+        <slot name="actions" />
+      </span>
+    </h2>
+    <div class="ingredient-section-card">
+      <slot />
+    </div>
+  </section>
+</template>
+
+<style scoped>
+.ingredient-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: var(--ingredient-section-heading-min-height, 0px);
+  margin: var(--ingredient-section-heading-margin, 24px 0 0);
+  padding: var(--ingredient-section-heading-padding, 0 36px 6px);
+  color: var(--ingredient-section-heading-color, var(--ion-text-color-step-400, #6d6d72));
+  font-weight: var(--ingredient-section-heading-weight, 400);
+}
+.ingredient-section-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.ingredient-section-note {
+  color: var(--c-ink-2);
+  font-weight: 400;
+}
+.ingredient-section-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ingredient-section-gap, 8px);
+  margin: var(--ingredient-section-margin, 0 16px);
+  padding: var(--ingredient-section-padding, 12px);
+  border: var(--ingredient-section-border, 1px solid var(--c-rule));
+  border-radius: var(--ingredient-section-radius, 10px);
+  background: var(--c-surface);
+  box-shadow: var(--shadow-1);
+}
+</style>

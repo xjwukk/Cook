@@ -1,0 +1,142 @@
+/* 设计令牌 —— 唯一来源。
+ *
+ * 方向见 docs/decisions/0019-warm-editorial-web-visual-direction.md，
+ * 规范与验收见 docs/dev/design-system.md。
+ *
+ * 分层：css-vars.scss 定义自有令牌 → ionic.css 把 Ionic 变量映射到这些令牌
+ * → 组件只消费令牌，不写死颜色值。
+ */
+
+:root {
+  /* ---- 纸面与墨色：像摊开的食谱册 ---- */
+  --c-paper: #fbf7f0;
+  --c-paper-alt: #f4ede2;
+  --c-paper-sunk: #efe6d8;
+  --c-surface: #fffdf9; /* 卡片面：比纸底更亮的暖白，卡片浮在纸面上 */
+  --c-ink: #2a2622;
+  --c-ink-2: #6b6058;
+  --c-ink-3: #7a6e62;
+  --c-rule: #e3d8c7;
+  --c-rule-strong: #d3c3aa;
+
+  /* ---- 语义色：四个色相，避免塌成单色系 ---- */
+  --c-brand: #b84e27; /* 陶土橙：主操作与已选态 */
+  --c-brand-ink: #9a3f1e;
+  --c-brand-wash: #f7e5d9;
+  --c-brand-contrast: #fff7f0; /* 主色底上的文字色 */
+  --c-herb: #3f5d45; /* 墨绿：健康、成功 */
+  --c-herb-wash: #e5ede7;
+  --c-saffron: #e8b33c; /* 姜黄：强调 */
+  --c-saffron-ink: #8a6014;
+  --c-saffron-wash: #fbedcd;
+  --c-warn: #8f6410; /* 琥珀：缺食材等提示 */
+  --c-alert: #a83226; /* 忌口、错误 */
+  --c-emoji-wash: #f2e3d1; /* 食材 emoji 的圆形纸章容器 */
+
+  /* ---- 字体 ---- */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
+    'Source Han Sans SC', 'Noto Sans CJK SC', sans-serif;
+  /* 衬线只作用于拉丁字母与数字（计数、序号、字标）；中文不下载 serif 字体 */
+  --font-display: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
+
+  /* ---- 字号：编辑式对比，拉开层级 ---- */
+  --fs-2xs: 11px;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-base: 15px;
+  --fs-md: 17px;
+  --fs-lg: 20px;
+  --fs-xl: 24px;
+  --fs-2xl: 30px;
+  --fs-3xl: 38px;
+
+  /* ---- 间距 ---- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --sp-8: 48px;
+
+  /* ---- 圆角 ---- */
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-pill: 999px;
+
+  /* ---- 阴影：暖墨色，不用纯黑 ---- */
+  --shadow-1: 0 1px 2px rgb(58 42 30 / 6%), 0 1px 1px rgb(58 42 30 / 4%);
+  --shadow-2: 0 2px 8px rgb(58 42 30 / 8%), 0 1px 2px rgb(58 42 30 / 5%);
+  --shadow-3: 0 10px 28px rgb(58 42 30 / 10%), 0 2px 6px rgb(58 42 30 / 6%);
+
+  /* ---- 动效 ---- */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+
+  /* ---- 旧令牌别名：保留给既有消费方 ---- */
+  --c-bg: var(--c-paper);
+  --c-bg-alt: var(--c-paper-alt);
+  --c-text: var(--c-ink);
+  --c-primary: var(--c-brand);
+
+  /* ---- 云乐坊 UI 库：把蓝色系映射到暖色系 ---- */
+  --ylf-c-text: var(--c-ink);
+  --ylf-c-text-2: var(--c-ink-2);
+  --ylf-c-text-3: var(--c-ink-3);
+  --ylf-c-brand: var(--c-brand);
+  --ylf-c-brand-hover: var(--c-brand-ink);
+  --ylf-c-brand-active: var(--c-brand-ink);
+  --ylf-c-brand-soft: var(--c-brand-wash);
+  --ylf-c-border: var(--c-rule);
+  --ylf-c-border-strong: var(--c-rule-strong);
+  --ylf-c-surface: var(--c-paper);
+  --ylf-c-surface-inset: var(--c-paper-sunk);
+  --ylf-c-bg: var(--c-paper);
+  --ylf-c-bg-alt: var(--c-paper-alt);
+  --ylf-c-bg-soft: var(--c-paper-sunk);
+  --ylf-c-bg-mute: var(--c-paper-alt);
+  --ylf-c-grid: rgb(196 85 45 / 6%);
+  --ylf-c-highlight: rgb(196 85 45 / 10%);
+  --ylf-c-edge: rgb(58 42 30 / 12%);
+
+  /* ---- cook 布局常量 ---- */
+  --cook-bottom-menu-padding-bottom: 20px;
+  --cook-bottom-menu-height: calc(64px + var(--cook-bottom-menu-padding-bottom));
+}
+
+/* 暗色不是浅色的反相：偏暖的「夜厨房」配色，保证纸面与墨线仍有层次差 */
+.dark,
+.ion-palette-dark {
+  --c-paper: #17130f;
+  --c-paper-alt: #201a15;
+  --c-paper-sunk: #2a231c;
+  --c-surface: #221c16;
+  --c-ink: #f3ebe0;
+  --c-ink-2: #bfb1a1;
+  --c-ink-3: #a2958a;
+  --c-rule: #362c23;
+  --c-rule-strong: #4a3c2f;
+
+  --c-brand: #e08a5f;
+  --c-brand-ink: #f0a87c;
+  --c-brand-wash: #3a2418;
+  --c-brand-contrast: #2a2622;
+  --c-herb: #8fb89a;
+  --c-herb-wash: #1f2e24;
+  --c-saffron: #efc55e;
+  --c-saffron-ink: #efc55e;
+  --c-saffron-wash: #3a2e14;
+  --c-warn: #e0a94a;
+  --c-alert: #e88a80;
+  --c-emoji-wash: #332820;
+
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 40%);
+  --shadow-2: 0 2px 8px rgb(0 0 0 / 45%);
+  --shadow-3: 0 10px 28px rgb(0 0 0 / 55%);
+}

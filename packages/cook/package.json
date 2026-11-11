@@ -1,0 +1,77 @@
+{
+  "name": "@yunyoujun/cook",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Cook CLI - 食用手册命令行工具，菜谱检索/数据管理",
+  "author": "YunYouJun <me@yunyoujun.cn>",
+  "license": "MIT",
+  "homepage": "https://github.com/YunYouJun/cook/tree/main/packages/cook#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YunYouJun/cook.git",
+    "directory": "packages/cook"
+  },
+  "bugs": "https://github.com/YunYouJun/cook/issues",
+  "keywords": [
+    "cook",
+    "recipe",
+    "cli",
+    "菜谱",
+    "食谱"
+  ],
+  "exports": {
+    "./recommend": {
+      "types": "./dist/utils/recommend.d.mts",
+      "import": "./dist/utils/recommend.mjs"
+    },
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    },
+    "./custom-recipes": {
+      "types": "./dist/utils/custom-recipes.d.mts",
+      "import": "./dist/utils/custom-recipes.mjs"
+    },
+    "./personal-catalog": {
+      "types": "./dist/utils/personal-catalog.d.mts",
+      "import": "./dist/utils/personal-catalog.mjs"
+    },
+    "./reviewed-data": {
+      "types": "./dist/utils/reviewed-data.d.mts",
+      "import": "./dist/utils/reviewed-data.mjs"
+    }
+  },
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "bin": {
+    "cook": "./dist/cli.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "unbuild",
+    "cook": "tsx src/cli.ts",
+    "fetch": "tsx src/cli.ts fetch",
+    "convert": "tsx src/cli.ts convert",
+    "search": "tsx src/cli.ts search",
+    "prepublishOnly": "pnpm run build"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.7.0",
+    "@larksuiteoapi/node-sdk": "^1.73.0",
+    "cac": "^7.0.0",
+    "consola": "^3.4.2",
+    "papaparse": "^5.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/papaparse": "^5.5.2",
+    "tsx": "^4.23.12",
+    "unbuild": "^3.6.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

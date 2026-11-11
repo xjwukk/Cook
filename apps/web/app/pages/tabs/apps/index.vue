@@ -1,0 +1,42 @@
+<script setup lang="ts">
+import { cookDocumentHead, publicPages } from '~/constants'
+
+definePageMeta({
+  alias: ['/apps'],
+})
+
+useHead(cookDocumentHead(publicPages.apps))
+</script>
+
+<template>
+  <ion-page>
+    <ion-header :translucent="true">
+      <ion-toolbar>
+        <ion-title>发现</ion-title>
+      </ion-toolbar>
+    </ion-header>
+    <ion-content :fullscreen="true">
+      <ion-header collapse="condense">
+        <ion-toolbar>
+          <ion-title size="large">
+            发现
+          </ion-title>
+        </ion-toolbar>
+      </ion-header>
+
+      <ion-list :inset="true">
+        <ion-item router-link="/apps/random">
+          <CookListIcon slot="start" :icon="ioniconsShuffleOutline" color="#d98324" />
+          <ion-label>今天吃什么</ion-label>
+        </ion-item>
+      </ion-list>
+
+      <ion-list :inset="true">
+        <ion-item router-link="/feedback?category=idea" :detail="true">
+          <CookListIcon slot="start" :icon="ioniconsBulbOutline" color="#4a7c59" />
+          <ion-label>新功能建议</ion-label>
+        </ion-item>
+      </ion-list>
+    </ion-content>
+  </ion-page>
+</template>

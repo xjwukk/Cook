@@ -1,0 +1,6 @@
+{
+  "action": "updateResourcePermission",
+  "resourceType": "noSqlDatabase",
+  "resourceId": "cook_user_data",
+  "permission": "ADMINONLY"
+}
