@@ -28,5 +28,12 @@ export default nuxt(
         'vue/no-deprecated-slot-attribute': 'off',
       },
     },
+    {
+      // 账号服务用 Node 自带测试运行器，不依赖 vitest。
+      files: ['server/**/*.mjs'],
+      rules: {
+        'test/no-import-node-test': 'off',
+      },
+    },
   ),
 )

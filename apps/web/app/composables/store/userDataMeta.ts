@@ -1,6 +1,6 @@
 import type { FavoriteRemoval, HistoryRemoval } from '~/utils/userData'
 import { useStorage } from '@vueuse/core'
-import { namespace } from '~/constants'
+import { scopedKey } from '~/utils/storageScope'
 
 /**
  * Sync bookkeeping kept next to `cook:favorites` and `cook:history`, which stay
@@ -15,7 +15,7 @@ export interface UserDataMeta {
   lastUid: string
 }
 
-export const userDataMeta = useStorage<UserDataMeta>(`${namespace}:sync`, {
+export const userDataMeta = useStorage<UserDataMeta>(scopedKey('sync'), {
   favoriteRemovals: [],
   historyRemovals: [],
   historyClearedAt: 0,

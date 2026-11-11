@@ -199,7 +199,6 @@ await write('apps/web/public/pwa-512x512.png', await iconCanvas(512))
 const brandSvg = brandLogoSvg(await iconCanvas(128, { inset: 0.04 }))
 for (const path of [
   'apps/web/public/brand/cook-app-icon.svg',
-  'apps/web/public/about/assets/cook-app-icon.svg',
   'docs/public/brand/cook-app-icon.svg',
   'docs/public/brand/cook-app-icon-dark.svg',
 ])

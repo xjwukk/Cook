@@ -1,7 +1,6 @@
 <script lang="ts" setup>
 import type { RecipeHistoryItem } from '~/composables/store/history'
 import dayjs from 'dayjs'
-import RecipeFeedbackButton from '~/components/feedback/RecipeButton.vue'
 import { clearRecipeHistories, recipeHistories, removeRecipeHistory } from '~/composables/store/history'
 import { confirmDestructive } from '~/utils/dialog'
 import { openRecipe } from '~/utils/recipe'
@@ -11,7 +10,6 @@ definePageMeta({
   layout: 'child',
   title: '历史记录',
 })
-const { scopeBlocked, scopeRevision } = useUserDataSync()
 
 /**
  * 按天分组，最近的在最前
@@ -34,17 +32,14 @@ const sections = computed(() => {
 })
 
 async function clearAllHistory() {
-  const revision = scopeRevision.value
   if (await confirmDestructive({ header: '历史记录清空后不可恢复', confirmText: '清空历史记录' })) {
-    if (scopeBlocked.value || scopeRevision.value !== revision)
-      return
     clearRecipeHistories()
     void yunleHaptic('success')
   }
 }
 
 function clearOneHistory(history: RecipeHistoryItem) {
-  if (scopeBlocked.value || !recipeHistories.value.includes(history))
+  if (!recipeHistories.value.includes(history))
     return
   removeRecipeHistory(history)
   void yunleHaptic('medium')
@@ -80,7 +75,6 @@ function clearOneHistory(history: RecipeHistoryItem) {
                 <ion-label class="truncate">
                   <DishLabel class="text-sm" :dish="history.recipe" />
                 </ion-label>
-                <RecipeFeedbackButton slot="end" :recipe="history.recipe" compact />
                 <ion-note slot="end" class="text-xs">
                   {{ dayjs(history.time).format('HH:mm') }}
                 </ion-note>

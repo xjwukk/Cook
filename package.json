@@ -11,7 +11,6 @@
   "scripts": {
     "build": "node scripts/build-web-output.mjs build",
     "build:full": "node scripts/build-web-output.mjs full",
-    "build:site": "pnpm run build && pnpm run docs:build && node scripts/compose-product-site.mjs",
     "build:nuxt": "pnpm -C apps/web run build",
     "convert": "pnpm -C packages/cook run convert",
     "validate": "tsx scripts/validate-recipes.ts",
@@ -20,11 +19,7 @@
     "amounts:annotate": "tsx scripts/annotate-recipe-amounts.ts",
     "audit:amounts": "tsx scripts/audit-recipe-amounts.ts",
     "check:videos": "tsx scripts/check-video-links.ts",
-    "feedback:pull": "tsx scripts/pull-feedback.ts",
-    "eval:search": "tsx scripts/eval-search.ts",
     "fixtures": "tsx scripts/gen-fixtures.ts",
-    "howtocook": "tsx scripts/import-howtocook.ts",
-    "images:upload": "tsx --env-file-if-exists=.env scripts/upload-recipe-images.ts",
     "fetch": "pnpm -C packages/cook run fetch",
     "dev": "pnpm -C apps/web run dev",
     "docs:dev": "pnpm -C docs run docs:dev",
@@ -38,7 +33,10 @@
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "pnpm -C packages/cook run build && pnpm -C apps/web run typecheck",
-    "pack:skill": "tsx scripts/pack-skill.ts"
+    "pack:skill": "tsx scripts/pack-skill.ts",
+    "server:dev": "pnpm -C server run dev",
+    "server:start": "pnpm -C server run start",
+    "server:test": "pnpm -C server run test"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^8.3.0",
@@ -52,7 +50,6 @@
     "baseline-browser-mapping": "^2.11.13",
     "bumpp": "^11.1.0",
     "consola": "^3.4.2",
-    "cos-nodejs-sdk-v5": "^3.0.0",
     "eslint": "^10.8.1",
     "eslint-plugin-format": "^2.0.1",
     "fake-indexeddb": "^6.2.5",

@@ -1,13 +1,12 @@
 /**
  * Public citation metadata for the web app.
- * Canonical host is the deployed web app. The product site at cook.yunle.fun
- * stays on its own host; see docs/decisions/0015-product-site-domains.md.
+ * 自托管部署时用 NUXT_PUBLIC_SITE_URL 指定对外域名（含协议），构建前设置。
  */
-export const siteOrigin = 'https://cook.yunyoujun.cn'
+export const siteOrigin = (import.meta.env.NUXT_PUBLIC_SITE_URL || 'http://localhost:3000').replace(/\/+$/, '')
 export const siteName = '料理手帐'
 export const siteTitle = '料理手帐｜根据家里的食材和厨具找菜谱'
-export const appDescription = '根据家里现有的食材和厨具，找到今天能做的家常菜。料理手帐（Cook）免费使用，也叫云食册：点选食材、一句话找菜、看做法、收藏，或随机决定今天吃什么。'
-export const socialImagePath = '/about/assets/light-2-cook-selected.webp'
+export const appDescription = '根据家里现有的食材和厨具，找到今天能做的家常菜。点选食材、一句话找菜、看做法、收藏，或随机决定今天吃什么。'
+export const socialImagePath = '/brand/cook-logo.png'
 
 export const authorName = '云游君'
 export const authorAlternateName = 'YunYouJun'
@@ -37,13 +36,8 @@ export const publicPages = {
   },
   apps: {
     title: '发现｜料理手帐',
-    description: '进入「今天吃什么」，或提交新功能建议。',
+    description: '不知道吃什么时，随机挑一道家常菜。',
     path: '/apps',
-  },
-  help: {
-    title: '帮助｜料理手帐',
-    description: '料理手帐怎么用：匹配模式、一句话找菜、清空已选食材，以及网页版的常见问题。',
-    path: '/help',
   },
 } as const satisfies Record<string, CookSeoPage>
 
@@ -58,7 +52,6 @@ const routeSeoByPath: Record<string, CookSeoPage> = {
   '/tabs/library': publicPages.library,
   '/apps': publicPages.apps,
   '/tabs/apps': publicPages.apps,
-  '/help': publicPages.help,
 }
 
 export function absoluteSiteUrl(path = '/') {
@@ -80,7 +73,7 @@ export function webApplicationJsonLd() {
     '@type': 'WebApplication',
     '@id': `${siteOrigin}/#app`,
     'name': siteName,
-    'alternateName': ['Cook', '云食册'],
+    'alternateName': ['Cook'],
     'url': absoluteSiteUrl('/'),
     'description': appDescription,
     'applicationCategory': 'LifestyleApplication',

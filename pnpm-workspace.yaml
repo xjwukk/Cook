@@ -19,6 +19,7 @@ packages:
   - apps/*
   - docs
   - packages/*
+  - server
 
 overrides:
   # Keep TypeScript 5 support; 1.6.28 requires TypeScript 6.

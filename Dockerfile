@@ -9,9 +9,9 @@ COPY . .
 # pnpm build verifies HEAD and records its provenance in the static output.
 RUN test -d .git || (echo 'Docker builds require a standalone Git clone, not a source ZIP or linked worktree.' >&2; exit 1)
 
-# Public analytics settings are compiled into the static site.
-ARG NUXT_PUBLIC_CLARITY_PROJECT_ID=ks1ebw03i5
-ARG NUXT_PUBLIC_CLARITY_DOMAINS=cook.yunyoujun.cn,cook.yunle.fun
+# 对外域名会写入 canonical、OG 与 sitemap，构建前必须设置。
+ARG NUXT_PUBLIC_SITE_URL=http://localhost:8080
+ENV NUXT_PUBLIC_SITE_URL=${NUXT_PUBLIC_SITE_URL}
 
 RUN pnpm install --frozen-lockfile && pnpm run build
 

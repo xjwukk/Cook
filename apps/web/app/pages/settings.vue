@@ -126,7 +126,7 @@ async function importFromPaste(): Promise<void> {
         </ion-item>
       </ion-list>
       <p class="cook-group-footer">
-        导入会和当前记录合并。有效云乐坊会员登录后可同步收藏和历史；账号记录分别保留，退出后恢复未登录时的本机记录。
+        导入会和当前记录合并。登录后，这台设备的收藏和历史会与你的服务器账号同步。
       </p>
       <input
         ref="importInput"

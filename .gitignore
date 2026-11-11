@@ -13,13 +13,6 @@ packages/data/incompatible-foods.json
 # Local screenshots, test reports, and verification archives
 /artifacts/
 
-# Swift Package Manager
-apps/ios/**/.build
-apps/ios/**/.swiftpm
-# XcodeGen 生成
-apps/ios/*.xcodeproj
-apps/ios/Cook/Info.plist
-apps/ios/Cook/Cook.entitlements
 
 .DS_Store
 .vite-ssg-dist
@@ -46,10 +39,6 @@ dist
 # EdgeOne CLI local state and build artifacts
 .edgeone/
 
-# Apple signing secrets
-*.p12
-AuthKey_*.p8
-*.mobileprovision
 
 # CodeBuddy
 .codebuddy/memory
@@ -72,3 +61,9 @@ apps/web/ionic.config.json
 
 # 浏览器测试产物（Playwright MCP 快照与截图）
 .playwright-mcp/
+
+# 自托管账号服务的 SQLite 数据
+server/data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

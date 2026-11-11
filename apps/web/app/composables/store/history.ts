@@ -1,6 +1,6 @@
 import type { RecipeItem } from '~/types'
 import { useStorage } from '@vueuse/core'
-import { namespace } from '~/constants'
+import { scopedKey } from '~/utils/storageScope'
 import { userDataMeta } from './userDataMeta'
 
 export interface RecipeHistoryItem {
@@ -8,7 +8,7 @@ export interface RecipeHistoryItem {
   time: number
 }
 
-export const recipeHistories = useStorage<RecipeHistoryItem[]>(`${namespace}:history`, [])
+export const recipeHistories = useStorage<RecipeHistoryItem[]>(scopedKey('history'), [])
 
 export function addRecipeHistory(recipe: RecipeItem) {
   recipeHistories.value.push({ recipe, time: Date.now() })

@@ -118,8 +118,9 @@ export function copyWebOutput(repositoryRoot, input, options) {
 export function buildWebOutput(repositoryRoot, {
   mode = 'generate',
   environment = process.env,
-  prepare = (root, args, env) => execFileSync('pnpm', args, { cwd: root, env, stdio: 'inherit' }),
-  generate = (root, env) => execFileSync('pnpm', ['-C', 'apps/web', 'run', 'generate'], { cwd: root, env, stdio: 'inherit' }),
+  // Windows 上 pnpm 是 .cmd，execFileSync 需要经过 shell 才能找到。
+  prepare = (root, args, env) => execFileSync('pnpm', args, { cwd: root, env, stdio: 'inherit', shell: process.platform === 'win32' }),
+  generate = (root, env) => execFileSync('pnpm', ['-C', 'apps/web', 'run', 'generate'], { cwd: root, env, stdio: 'inherit', shell: process.platform === 'win32' }),
   now,
 } = {}) {
   if (!['build', 'full', 'generate'].includes(mode))

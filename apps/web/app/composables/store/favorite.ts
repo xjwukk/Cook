@@ -3,13 +3,13 @@ import type { DbRecipeItem } from '~/utils/db'
 import type { FavoriteEntry } from '~/utils/userData'
 import { useStorage } from '@vueuse/core'
 import { computed } from 'vue'
-import { namespace } from '~/constants'
+import { scopedKey } from '~/utils/storageScope'
 import { userDataMeta } from './userDataMeta'
 
 export type { FavoriteEntry }
 
 // Store favorite entries with timestamp in localStorage
-const rawFavorites = useStorage(`${namespace}:favorites`, [] as any)
+const rawFavorites = useStorage(scopedKey('favorites'), [] as any)
 
 // Migration: if old format number[] exists, convert to FavoriteEntry[] with current time
 function ensureFavoriteEntries(): FavoriteEntry[] {

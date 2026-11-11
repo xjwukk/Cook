@@ -9,14 +9,6 @@
 **/dist
 dist-site
 **/.cache
-**/.build
-**/.swiftpm
-**/.godot
-**/target
-**/release
-**/*.xcodeproj
-apps/ios/Cook/Info.plist
-apps/ios/Cook/Cook.entitlements
 .env
 .env.*
 !.env.example
@@ -28,6 +20,3 @@ apps/ios/Cook/Cook.entitlements
 artifacts
 *.log
 **/.DS_Store
-**/*.p12
-**/*.p8
-**/*.mobileprovision

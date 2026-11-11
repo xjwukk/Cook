@@ -2,11 +2,12 @@ import type { CustomRecipe } from '~/utils/customRecipe'
 import { useStorage } from '@vueuse/core'
 import { namespace } from '~/constants'
 import { updatePrivateRecipeStorage } from '~/utils/privateRecipeStorage'
+import { scopedKey } from '~/utils/storageScope'
 
 export type { CustomRecipe }
 
 // 和收藏、历史一样始终保存在本机；不参与云同步
-export const customRecipes = useStorage<CustomRecipe[]>(`${namespace}:custom-recipes`, [])
+export const customRecipes = useStorage<CustomRecipe[]>(scopedKey('custom-recipes'), [])
 
 /** Read current storage at commit time so another tab's additions are preserved. */
 export function updateCustomRecipes(update: (current: CustomRecipe[]) => CustomRecipe[]) {

@@ -30,13 +30,6 @@ useHead(cookDocumentHead(publicPages.apps))
           <ion-label>今天吃什么</ion-label>
         </ion-item>
       </ion-list>
-
-      <ion-list :inset="true">
-        <ion-item router-link="/feedback?category=idea" :detail="true">
-          <CookListIcon slot="start" :icon="ioniconsBulbOutline" color="#4a7c59" />
-          <ion-label>新功能建议</ion-label>
-        </ion-item>
-      </ion-list>
     </ion-content>
   </ion-page>
 </template>

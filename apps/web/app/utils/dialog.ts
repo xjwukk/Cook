@@ -14,10 +14,11 @@ export async function showAlert(header: string, message: string): Promise<void> 
 /**
  * 破坏性操作的确认：底部操作表，确认项为红色
  */
-export async function confirmDestructive(options: { header: string, confirmText: string }): Promise<boolean> {
+export async function confirmDestructive(options: { header: string, message?: string, confirmText: string }): Promise<boolean> {
   void yunleHaptic('medium')
   const sheet = await actionSheetController.create({
     header: options.header,
+    subHeader: options.message,
     buttons: [
       { text: options.confirmText, role: 'destructive' },
       { text: '取消', role: 'cancel' },
@@ -26,6 +27,24 @@ export async function confirmDestructive(options: { header: string, confirmText:
   await sheet.present()
   const { role } = await sheet.onDidDismiss()
   return role === 'destructive'
+}
+
+/**
+ * 单行密码输入；取消时返回 undefined
+ */
+export async function promptPassword(options: { header: string, message?: string, okText: string }): Promise<string | undefined> {
+  const alert = await alertController.create({
+    header: options.header,
+    message: options.message,
+    inputs: [{ name: 'value', type: 'password' }],
+    buttons: [
+      { text: '取消', role: 'cancel' },
+      { text: options.okText, role: 'confirm' },
+    ],
+  })
+  await alert.present()
+  const { role, data } = await alert.onDidDismiss<{ values: { value?: string } }>()
+  return role === 'confirm' ? data?.values.value ?? '' : undefined
 }
 
 /**

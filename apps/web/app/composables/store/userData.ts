@@ -1,5 +1,4 @@
 import type { UserData, UserDataExportFile } from '~/utils/userData'
-import type { UserDataLocal } from '~/utils/userDataSync'
 import {
   createEmptyUserData,
   createUserDataExport,
@@ -30,16 +29,6 @@ export function writeLocalUserData(data: UserData): void {
     historyRemovals: data.historyRemovals,
     historyClearedAt: data.historyClearedAt,
   }
-}
-
-export const localUserData: UserDataLocal = {
-  read: readLocalUserData,
-  write: writeLocalUserData,
-  readLastUid: () => userDataMeta.value.lastUid ?? '',
-  writeLastUid: (uid) => {
-    if (userDataMeta.value.lastUid !== uid)
-      userDataMeta.value = { ...userDataMeta.value, lastUid: uid }
-  },
 }
 
 export function exportLocalUserData(now = Date.now()): UserDataExportFile {

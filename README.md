@@ -1,141 +1,67 @@
 # Cook · 料理手帐
 
 > 好的，今天我们来做菜 🥬
->
-> 网页版产品名：料理手帐（原食用手册）；原生 iOS 版叫云食册。见 [0020](./docs/decisions/0020-brand-rename-and-warm-editorial-tokens.md)。
-> Note: This is primarily a Chinese project and we do not intend to translate to English due to the fact that all the ingredients we are familiar with are in Chinese.
 
-## 版本
+根据家里现有的食材和厨具找家常菜。本仓库在原 [Cook](https://github.com/YunYouJun/cook) 开源项目（MIT）基础上做了自托管改造：
 
-[![Release](https://github.com/YunYouJun/cook/actions/workflows/release.yml/badge.svg)](https://github.com/YunYouJun/cook/actions/workflows/release.yml)
+- 移除了原生 iOS 工程、云函数、云乐坊账号体系、应用内反馈与外部文档入口
+- 新增自带账号服务：注册（邀请码）、登录、改密码、好友/家庭账号隔离、收藏与历史跨设备同步
+- 保留菜谱数据、检索与推荐逻辑、私人菜谱、个人食材厨具、饮食目标与专题
 
-### 网页版本
+界面与内容为中文。菜谱数据源自上游项目与 [HowToCook](https://github.com/Anduin2017/HowToCook)（Unlicense）。
 
-- 官网与文档：[cook.yunle.fun](https://cook.yunle.fun)
-- 网页应用：[cook.yunyoujun.cn](https://cook.yunyoujun.cn)
-- 开发版（Vercel）：[cook.yunle.app](https://cook.yunle.app)
+## 功能
 
-本仓库不再配置 Netlify 自动部署；当前部署配置见[文档站点部署说明](./docs/dev/docs-site.md)。
+- **按食材找菜**：选择食材、厨具、做法、难度、忌口，实时给出能做的菜，并提示「再补一样能多解锁几道」
+- **一句话找菜**：本地解析「番茄鸡蛋 不要香菜 用炒锅 简单的」
+- **菜谱库**：887 道菜谱，按菜名搜索，收藏
+- **今天吃什么**：随机挑一道
+- **私人菜谱**：自己添加，可导出/导入备份
+- **个人食材和厨具**：只展示自己常用的
+- **饮食目标与专题**：控重、少添加糖、均衡搭配；次日便当、机构低 GI
+- **账号与同步**：登录后收藏和历史在多台设备间同步；未登录也能正常使用，数据只存本机
+- **数据备份**：收藏和历史可导出文件或复制到剪贴板
 
-### 小程序版本
-
-~~本仓库为网页版本，小程序版本请在微信搜索「来做菜」。~~
-
-因不可抗力，小程序因跳转 B 站视频而被判定为导流违规下架。
-将不再提供小程序版本。
-
-<!-- ![微信小程序版本](./public/search-cook.png) -->
-
-## 说明
-
-本项目初衷是方便特殊时期隔离在家而材料有限的小伙伴，因此菜谱材料会尽量限制在特定范围内。
-
-更多可参见 [来做菜 | 关于](https://cook.yunyoujun.cn/about)。
-
-欢迎反馈更多菜谱数据：
-
-- 相关链接
-  - [菜谱数据表格（飞书）](https://yunlefun.feishu.cn/wiki/KgxowvnB9iM91AkZEJHcNGoQnPg?sheet=X4j9Bn)
-  - [居家菜谱投稿](https://docs.qq.com/form/page/DWk9GWW9oTmlXZU9V)
-  - [反馈建议分享-兔小巢](https://support.qq.com/products/507827)
-
-### Features
-
-- Web：按食材、厨具和忌口找菜，收藏常做的菜，保存私人菜谱，并按经审核的饮食目标与带饭场景筛选。
-- iPhone / iPad：原生应用「云食册」已开放 [TestFlight 测试](https://testflight.apple.com/join/KTTJNhDh)，需要 iOS 17 / iPadOS 17 或更新版本，名额与可用版本以邀请页为准。参见[安装与反馈指南](https://cook.yunle.fun/guide/ios-beta)。
-
-Web 与原生应用独立发布；iOS 目前仍为测试版，尚未在 App Store 正式上架。
-
-两端的定位、功能边界与后续方向见 [Web 与 iOS 的定位](./docs/guide/web-and-ios.md)。
-
-## 开发
-
-**开发文档**：<https://cook.yunle.fun/>
-
-详细的环境配置、飞书数据拉取等说明请查看开发文档。
-
-### 启动项目
+## 快速开始
 
 ```bash
-# 安装依赖
 pnpm install
-
-# 从飞书拉取最新数据(可选)
-pnpm fetch
-
-# 或将本地 CSV 转换为 JSON
-pnpm convert
-
-# 启动开发服务器
-pnpm dev
-# http://localhost:3333
+pnpm convert        # CSV → JSON，首次运行必须执行
+pnpm dev            # http://localhost:3000
 ```
 
-### CLI 命令
+账号服务单独启动：
 
 ```bash
-# 从飞书拉取菜谱数据
-pnpm fetch
-
-# 将 CSV 转换为 JSON
-pnpm convert
+pnpm server:dev     # 需要先在 .env 配置 COOK_ADMIN_* 与 COOK_INVITE_CODE
 ```
 
-更多 CLI 使用说明请查看 [Cook CLI 文档](https://cook.yunle.fun/dev/cli)。
+详细配置、Docker 部署与账号权限见 [自托管部署](docs/dev/self-hosting.md)。
 
-### 开发 APP
-
-Web 保留 Nuxt + Ionic；原生 iOS 使用 SwiftUI，位于 [`apps/ios`](./apps/ios/README.md)。旧 Capacitor 外壳已移除，原生 Android 将使用 Kotlin + Jetpack Compose，见 [Android 分阶段计划](./docs/dev/android-roadmap.md) 和 [移动应用开发](./docs/dev/app.md)。
-
-## 部署
-
-### 网站统计
-
-使用 Microsoft Clarity，复用 Cook 项目，通过 `NUXT_PUBLIC_CLARITY_PROJECT_ID` 和 `NUXT_PUBLIC_CLARITY_DOMAINS` 配置，无需部署统计服务器或数据库。显式设置空项目 ID 可关闭统计；静态站点须在构建前配置。详见 [网站统计](./docs/dev/analytics.md)。
-
-### Docker
-
-支持 Docker Compose 和域名反向代理。推荐从源码构建，确保包含当前路由修复：
+## 常用命令
 
 ```bash
-git clone https://github.com/YunYouJun/cook.git
-cd cook
-docker compose up -d --build
-# http://localhost:8080
+pnpm validate           # 校验菜谱数据
+pnpm lint               # ESLint
+pnpm typecheck          # 类型检查
+pnpm test -- --run      # 测试
+pnpm server:test        # 账号服务测试
+pnpm build              # 构建静态站点到 dist/
+docker compose up -d --build   # 构建并启动站点与账号服务
 ```
 
-默认只监听本机，适合由宿主机 Nginx / Caddy 反代；需要通过服务器 IP 访问时，运行 `COOK_HOST=0.0.0.0 docker compose up -d --build`。Compose、HTTPS 反代示例、更新方式和构建参数见 [Docker 部署](https://cook.yunle.fun/dev/docker)。
+## 结构
 
-已发布镜像仍可直接运行（`latest` 随版本标签发布，可能落后于主分支）：
+| 目录            | 内容                                                   |
+| --------------- | ------------------------------------------------------ |
+| `apps/web`      | Nuxt 4 + Ionic 前端（CSR，静态生成）                   |
+| `server`        | 自托管账号与同步服务（Node 内置 SQLite，无运行时依赖） |
+| `packages/data` | 菜谱数据、食材词典、别名、审核数据                     |
+| `packages/cook` | 检索、推荐与数据校验逻辑（CLI）                        |
+| `docs`          | VitePress 文档                                         |
 
-```bash
-# 从 Docker Hub 拉取最新的镜像
-docker pull yunyoujun/cook:latest
-# 新建并启动容器，然后打开 http://localhost:3333
-docker run -it -d --name cook -p 8080:80 yunyoujun/cook:latest
+## 许可与致谢
 
-# 启动与停止
-docker start cook
-docker stop cook
-```
+代码遵循 [MIT License](./LICENSE)。原项目 © 2022 云游君（YunYouJun）。
 
-## 致谢
-
-感谢以下小伙伴为本项目提供的数据支持和 QA ！
-
-- [Runny](https://weibo.com/runny)
-- 麒麟
-- 晴方啾
-- 课代表阿伟
-
-部分图文做法来自 [Anduin2017/HowToCook](https://github.com/Anduin2017/HowToCook)（Unlicense），感谢所有贡献者。
-
-## [Sponsors](https://sponsors.yunyoujun.cn)
-
-感谢至今以来的所有赞助者们！因为你们的支持让我更有动力去做各种尝试。
-
-<p align="center">
-  <a href="https://cdn.jsdelivr.net/gh/YunYouJun/sponsors/public/sponsors.svg">
-    <img src='https://cdn.jsdelivr.net/gh/YunYouJun/sponsors/public/sponsors.svg' alt='Sponsors'/>
-  </a>
-</p>
+感谢原项目与 HowToCook 的数据支持；菜谱视频链接指向 B 站，版权归原作者所有。

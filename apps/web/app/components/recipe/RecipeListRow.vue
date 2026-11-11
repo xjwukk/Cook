@@ -1,6 +1,5 @@
 <script lang="ts" setup>
 import type { DbRecipeItem } from '~/utils/db'
-import RecipeFeedbackButton from '~/components/feedback/RecipeButton.vue'
 import { isFavorited, toggleFavorite } from '~/composables/store/favorite'
 import { addRecipeHistory } from '~/composables/store/history'
 import { openRecipe } from '~/utils/recipe'
@@ -39,7 +38,6 @@ function toggle() {
       <ion-label class="truncate">
         <DishLabel class="text-sm" :dish="dish" />
       </ion-label>
-      <RecipeFeedbackButton slot="end" :recipe="dish" compact />
       <ion-button
         slot="end"
         class="recipe-row-star"

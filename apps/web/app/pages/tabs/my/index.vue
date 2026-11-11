@@ -1,30 +1,13 @@
 <script lang="ts" setup>
 import dayjs from 'dayjs'
 import { customRecipes } from '~/composables/store/customRecipe'
-import { links } from '~/constants'
 
 definePageMeta({
   alias: ['/my'],
 })
 
-const {
-  account,
-  configurationMessage,
-  errorMessage,
-  isAuthenticated,
-  signIn,
-  signOut,
-  status,
-} = useYunlefunAuth()
-
-const authBusy = computed(() => status.value === 'checking' || status.value === 'signing-in')
-
-const {
-  errorMessage: syncErrorMessage,
-  lastSyncedAt,
-  status: syncStatus,
-  syncNow,
-} = useUserDataSync()
+const { user, isAuthenticated } = useAccount()
+const { status: syncStatus, lastSyncedAt, errorMessage: syncErrorMessage, syncNow } = useAccountSync()
 
 const syncText = computed(() => {
   switch (syncStatus.value) {
@@ -41,15 +24,7 @@ const syncText = computed(() => {
 
 function handleSyncClick(): void {
   if (syncStatus.value === 'error')
-    syncNow()
-}
-
-async function handleSignIn(): Promise<void> {
-  await signIn()
-}
-
-async function handleSignOut(): Promise<void> {
-  await signOut()
+    void syncNow()
 }
 </script>
 
@@ -71,16 +46,19 @@ async function handleSignOut(): Promise<void> {
       </ion-header>
 
       <ion-list :inset="true">
-        <ion-item v-if="isAuthenticated && account" class="my-account" lines="full">
-          <ion-avatar v-if="account.avatarUrl" slot="start">
-            <img :alt="account.displayName" :src="account.avatarUrl">
-          </ion-avatar>
-          <ion-icon v-else slot="start" class="my-account-placeholder" :icon="ioniconsPersonCircle" />
+        <ion-item v-if="isAuthenticated && user" class="my-account" lines="full">
+          <ion-icon slot="start" class="my-account-placeholder" :icon="ioniconsPersonCircle" />
           <ion-label>
-            <h2>{{ account.displayName }}</h2>
-            <p>云乐坊账号</p>
+            <h2>{{ user.username }}</h2>
+            <p>本服务器账号</p>
           </ion-label>
+          <ion-note slot="end">
+            <NuxtLink to="/account">
+              退出
+            </NuxtLink>
+          </ion-note>
         </ion-item>
+
         <ion-item
           v-if="isAuthenticated"
           :button="syncStatus === 'error'"
@@ -94,32 +72,19 @@ async function handleSignOut(): Promise<void> {
             v-else
             slot="start"
             :icon="syncStatus === 'error' ? ioniconsCloudOfflineOutline : ioniconsCloudDoneOutline"
-            :color="syncStatus === 'error' ? '#ff3b30' : '#34c759'"
+            :color="syncStatus === 'error' ? '#a83226' : '#3f5d45'"
           />
           <ion-label>
-            <h2>会员收藏和历史同步</h2>
+            <h2>收藏和历史同步</h2>
             <p>{{ syncText }}</p>
           </ion-label>
         </ion-item>
-        <ion-item
-          v-if="!isAuthenticated"
-          :button="true"
-          :disabled="authBusy || Boolean(configurationMessage)"
-          @click="handleSignIn"
-        >
-          <span v-if="authBusy" slot="start" class="my-sync-spinner">
-            <ion-spinner name="crescent" />
-          </span>
-          <CookListIcon v-else slot="start" :icon="ioniconsLogInOutline" color="#b84e27" />
+
+        <ion-item v-else router-link="/account" :detail="true">
+          <CookListIcon slot="start" :icon="ioniconsLogInOutline" color="#b84e27" />
           <ion-label>
-            <h2>{{ authBusy ? '正在检查登录状态' : '使用云乐坊账号登录' }}</h2>
-            <p>安全授权，无需在料理手帐输入密码</p>
-          </ion-label>
-        </ion-item>
-        <ion-item v-if="configurationMessage || errorMessage" lines="none">
-          <ion-icon slot="start" color="danger" :icon="ioniconsAlertCircleOutline" />
-          <ion-label class="ion-text-wrap" color="danger">
-            {{ configurationMessage || errorMessage }}
+            <h2>登录或注册</h2>
+            <p>登录后收藏和历史可在多台设备间同步</p>
           </ion-label>
         </ion-item>
       </ion-list>
@@ -149,54 +114,9 @@ async function handleSignOut(): Promise<void> {
       </ion-list>
 
       <ion-list :inset="true">
-        <ion-item router-link="/feedback" :detail="true">
-          <CookListIcon slot="start" :icon="ioniconsChatbubbleEllipsesOutline" color="#4a7c59" />
-          <ion-label><h2>问题反馈</h2><p>私密发送给云乐坊团队</p></ion-label>
-        </ion-item>
-        <ion-item :href="links.support" target="_blank" rel="noopener noreferrer" :detail-icon="ioniconsOpenOutline">
-          <CookListIcon slot="start" :icon="ioniconsHelpCircleOutline" color="#b84e27" />
-          <ion-label>支持中心与需求墙</ion-label>
-        </ion-item>
-        <ion-item router-link="/feedback?category=recipe" :detail="true">
-          <CookListIcon slot="start" :icon="ioniconsMailOutline" color="#c2504f" />
-          <ion-label>菜谱投稿</ion-label>
-        </ion-item>
-      </ion-list>
-
-      <ion-list :inset="true">
         <ion-item router-link="/settings">
           <CookListIcon slot="start" :icon="ioniconsSettingsOutline" color="#8a8078" />
           <ion-label>设置</ion-label>
-        </ion-item>
-      </ion-list>
-
-      <ion-list :inset="true">
-        <ion-item router-link="/changelog">
-          <CookListIcon slot="start" :icon="ioniconsDocumentTextOutline" color="#8a6fa8" />
-          <ion-label>更新日志</ion-label>
-        </ion-item>
-        <ion-item router-link="/help">
-          <CookListIcon slot="start" :icon="ioniconsHelpCircleOutline" color="#b84e27" />
-          <ion-label>帮助</ion-label>
-        </ion-item>
-        <ion-item router-link="/about">
-          <CookListIcon slot="start" :icon="ioniconsInformationCircleOutline" color="#6f9bb5" />
-          <ion-label>关于</ion-label>
-        </ion-item>
-        <ion-item :href="links.legacyCook" :detail="true" :detail-icon="ioniconsOpenOutline">
-          <CookListIcon slot="start" :icon="ioniconsArrowUndoOutline" color="#8a8078" />
-          <ion-label>切换到旧版</ion-label>
-          <ion-note slot="end">
-            v1
-          </ion-note>
-        </ion-item>
-      </ion-list>
-
-      <ion-list v-if="isAuthenticated" :inset="true">
-        <ion-item :button="true" :detail="false" :disabled="authBusy" @click="handleSignOut">
-          <ion-label class="ion-text-center" color="danger">
-            退出登录
-          </ion-label>
         </ion-item>
       </ion-list>
     </ion-content>
@@ -208,13 +128,8 @@ async function handleSignOut(): Promise<void> {
   --padding-top: 6px;
   --padding-bottom: 6px;
 }
-.my-account ion-avatar {
-  width: 56px;
-  height: 56px;
-  margin-inline-end: 14px;
-}
 .my-account-placeholder {
-  font-size: 56px;
+  font-size: 48px;
   margin-inline-end: 14px;
   color: var(--c-ink-3);
 }

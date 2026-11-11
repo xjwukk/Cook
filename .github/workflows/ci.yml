@@ -2,409 +2,53 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
-      - dev
-
+    branches: [main, self-host]
   pull_request:
-    branches:
-      - main
-      - dev
-
   workflow_dispatch:
-    inputs:
-      ios_coverage:
-        description: iOS 测试范围：full 完整回归与审计，core 核心回归，membership 会员交易
-        type: choice
-        default: full
-        options:
-          - full
-          - core
-          - membership
 
 concurrency:
-  # A core push must not cancel an explicitly requested full audit.
-  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.ios_coverage == 'membership' && 'membership' || github.event_name == 'workflow_dispatch' && inputs.ios_coverage != 'core' && 'full' || 'core' }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  changes:
+  web:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: read
-      pull-requests: read
-    outputs:
-      core_key: ${{ steps.pr_core.outputs.key }}
-      core_run: ${{ steps.pr_core.outputs.run_id }}
-      skip_native: ${{ steps.changes.outputs.skip_native }}
-      ios_suites: ${{ steps.changes.outputs.ios_suites }}
-      ios_max_parallel: ${{ steps.changes.outputs.ios_max_parallel }}
-      ios_storekit_devices: ${{ steps.changes.outputs.ios_storekit_devices }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-      - name: Test change detection
-        run: node --test test/ciChanges.test.mjs
-      - name: Test isolated iOS infrastructure recovery
-        run: node --test test/iosTestInfrastructure.test.mjs test/iosStoreKitInfrastructure.test.mjs
-      - run: node --test test/iosCoreReuse.test.mjs
-      - name: Plan native CI coverage
-        id: changes
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/ci-changes.mjs
-      - name: Find a verified PR run for this merge
-        if: github.event_name == 'push' && steps.changes.outputs.skip_native == 'false'
-        id: pr_core
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/find-ios-core-run.mjs
-
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Set node
-        uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm convert
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test -- --run
 
-      - name: Install
-        run: pnpm install --frozen-lockfile
-
-      - name: Lint
-        run: pnpm run lint
-
-  typecheck:
+  server:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Set node
-        uses: actions/setup-node@v7
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-          cache: pnpm
+      - run: pnpm server:test
 
-      - name: Install
-        run: pnpm install --frozen-lockfile
-
-      - name: Convert CSV to JSON
-        run: pnpm run convert
-
-      - name: Typecheck
-        run: pnpm run typecheck
-
-  # Build from a fresh checkout before typecheck can generate packages/cook/dist.
-  # This matches the preview providers and catches missing workspace source aliases.
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run build
-      - name: Build documentation
-        run: pnpm run docs:build
-      - name: Verify product site composition and legacy redirect
-        run: |
-          node --test test/docsRedirect.test.mjs test/productSiteBuild.test.mjs
-          node scripts/compose-product-site.mjs
-
-  test:
-    permissions:
-      contents: read
-      actions: read
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-      fail-fast: false
-
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - name: Use repository Node.js version
-        uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          registry-url: https://registry.npmjs.org/
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run convert
-      - name: Verify managed AI service and shared intent contract
-        run: |
-          node scripts/generate-ai-intent-contract.mjs --check
-          node --test test/cookAiIntent.test.mjs test/aiIntentContract.test.mjs
-      - run: pnpm run validate
-      - run: pnpm run amounts:check
-      - name: Check recipe ids against base branch
-        if: github.event_name == 'pull_request'
-        run: |
-          git fetch --depth=1 origin ${{ github.base_ref }}
-          pnpm run validate --base FETCH_HEAD
-      - name: Test release provenance and Support delivery gates
-        run: node --test --test-reporter=dot test/webBuildInfo.test.mjs test/productSiteBuild.test.mjs test/supportAgentHttp.test.mjs test/cookGithubChanges.test.mjs test/cookDeliverySync.test.mjs test/supportLedger.test.mjs test/supportArtifacts.test.mjs test/edgeoneRelease.test.mjs test/cookSupportRunner.test.mjs
-      - run: pnpm run test
-      - name: Install pinned artifact SDK for runtime contract verification
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        run: npm install --prefix "$RUNNER_TEMP/cook-artifact-contract" --ignore-scripts --no-audit --no-fund @actions/artifact@6.3.1 @azure/core-xml@1.6.0
-      - name: Verify finalized checkpoints with the real Actions artifact runtime
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: actions/github-script@v9
+      - run: pnpm build
         env:
-          GH_TOKEN: ${{ github.token }}
-          COOK_ARTIFACT_MODULE: ${{ runner.temp }}/cook-artifact-contract/node_modules/@actions/artifact/lib/artifact.js
-        with:
-          script: |
-            const { spawnSync } = require('node:child_process')
-            const result = spawnSync(process.execPath, ['scripts/test-support-artifact-runtime.mjs'], { stdio: 'inherit' })
-            if (result.error || result.status !== 0) core.setFailed('The artifact runtime contract failed.')
-
-  web-acceptance:
-    needs: [lint, typecheck, build, test]
-    if: ${{ always() }}
-    runs-on: ubuntu-latest
-    permissions: {}
-    steps:
-      - name: Require all Web jobs and every matrix entry to succeed
-        env:
-          RESULTS: ${{ toJSON(needs) }}
-        run: node -e 'if (Object.values(JSON.parse(process.env.RESULTS)).some(job => job.result !== "success")) process.exit(1)'
-
-  # Run shared CookCore fixtures on Linux with an explicitly installed toolchain.
-  swift:
-    needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.skip_native != 'true') }}
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - name: Set node
-        uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run convert
-      - name: Import Swift release signing keys
-        run: gpg --batch --import .github/keys/swift-release-keys.asc
-      - name: Install Swift
-        uses: swift-actions/setup-swift@364295d9c23900ce04d4e5cc708387921b4e50f9 # v3
-        with:
-          swift-version: 6.2.2
-      - run: swift --version
-      - run: swift test --package-path apps/ios/CookCore
-      - run: bash scripts/test-private-recipe-roundtrip.sh
-      - run: bash scripts/test-personal-catalog-roundtrip.sh
-        env:
-          COOK_SWIFT_SCRATCH_PATH: apps/ios/CookCore/.build
-
-  # Only allocate a probe when both PR jobs provided matching evidence.
-  # The regular matrix remains the fallback for a failed or unavailable probe.
-  ios-core-reuse:
-    needs: changes
-    if: github.event_name == 'push' && needs.changes.result == 'success' && needs.changes.outputs.core_key != ''
-    runs-on: xcode-27
-    timeout-minutes: 10
-    continue-on-error: true
-    permissions:
-      contents: read
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
-    outputs:
-      verified: ${{ steps.compare.outputs.verified }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: ./.github/actions/ios-test-environment
-        id: environment
-      - name: Identify the current core environment
-        id: core_key
-        env:
-          IPHONE: ${{ steps.environment.outputs.iphone }}
-          IPAD: ${{ steps.environment.outputs.ipad }}
-        run: node scripts/ios-core-evidence.mjs
-      - name: Compare with successful PR core jobs
-        id: compare
-        env:
-          EXPECTED: ${{ needs.changes.outputs.core_key }}
-          ACTUAL: ${{ steps.core_key.outputs.key }}
-          SOURCE_RUN: ${{ needs.changes.outputs.core_run }}
-        run: |
-          if [[ -n "$ACTUAL" && "$ACTUAL" == "$EXPECTED" ]]; then
-            echo 'verified=true' >> "$GITHUB_OUTPUT"
-            echo "Reusing iOS core and StoreKit checks from [PR CI run $SOURCE_RUN]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN)." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo 'Toolchain evidence unavailable or different; running the native jobs.' >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-  # 云食册 iOS App：XcodeGen 生成工程，在 iPhone 和 iPad 模拟器上编译并跑测试（窄屏和宽屏两种布局）
-  ios-tests:
-    needs: [changes, ios-core-reuse]
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.skip_native != 'true') && (needs.ios-core-reuse.result != 'success' || needs.ios-core-reuse.outputs.verified != 'true') }}
-    runs-on: xcode-27
-    timeout-minutes: ${{ matrix.suite == 'core-regression' && 45 || 90 }}
-    strategy:
-      fail-fast: false
-      max-parallel: ${{ fromJSON(needs.changes.outputs.ios_max_parallel || '3') }}
-      matrix:
-        device: [iphone, ipad]
-        # Pushes and PRs use core coverage; manual runs default to the full matrix.
-        # A missing plan must retain full coverage rather than skip native checks.
-        suite: ${{ fromJSON(needs.changes.outputs.ios_suites || '["regression-main", "regression-discovery", "dietary"]') }}
-    env:
-      # Match native UI validation with a pinned compiler and XCTest toolchain.
-      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: ./.github/actions/ios-test-environment
-        id: environment
-      - name: Boot selected simulator
-        env:
-          DEVICE: ${{ steps.environment.outputs[matrix.device] }}
-        run: |
-          echo "Starting $DEVICE while the native test products compile."
-          xcrun simctl boot "$DEVICE" >/dev/null 2>&1 || true
-      - name: Build for testing
-        timeout-minutes: 15
-        id: native_build
-        run: |
-          architecture="$(uname -m)"
-          xcodebuild build-for-testing -project apps/ios/Cook.xcodeproj -scheme Cook \
-            -destination 'generic/platform=iOS Simulator' \
-            -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates \
-            -derivedDataPath "$RUNNER_TEMP/cook-derived-data" \
-            ARCHS="$architecture" ONLY_ACTIVE_ARCH=YES COMPILER_INDEX_STORE_ENABLE=NO \
-            CODE_SIGNING_ALLOWED=NO
-      - name: Build and test
-        timeout-minutes: ${{ matrix.suite == 'core-regression' && 30 || 60 }}
-        id: ios_tests
-        env:
-          DEVICE: ${{ steps.environment.outputs[matrix.device] }}
-          IOS_DEVICE: ${{ matrix.device }}
-          IOS_SUITE: ${{ matrix.suite }}
-        run: bash scripts/run-ios-ci-tests.sh
-      - name: Identify the tested PR core environment
-        if: github.event_name == 'pull_request' && matrix.suite == 'core-regression' && steps.ios_tests.outcome == 'success'
-        id: core_key
-        env:
-          IPHONE: ${{ steps.environment.outputs.iphone }}
-          IPAD: ${{ steps.environment.outputs.ipad }}
-        run: node scripts/ios-core-evidence.mjs
-      - name: 'Verified iOS core #${{ github.event.pull_request.number }} ${{ github.sha }} ${{ steps.core_key.outputs.key }}'
-        if: github.event_name == 'pull_request' && matrix.suite == 'core-regression' && steps.core_key.outputs.key != ''
-        run: echo 'Recorded the tested checkout and environment.'
-      # 跑多个设备时 xcodebuild 的日志里只有失败的用例名，没有原因，从结果包里读出来
-      - name: Show test failures
-        timeout-minutes: 5
-        if: ${{ failure() || cancelled() }}
-        run: |
-          for bundle in "$RUNNER_TEMP"/xcresult/*.xcresult; do
-            [ -d "$bundle" ] || continue
-            xcrun xcresulttool get test-results summary --path "$bundle" | python3 -c '
-          import json, sys
-          for failure in json.load(sys.stdin).get("testFailures", []):
-              name = failure.get("testName", "")
-              text = failure.get("failureText", "")
-              print(f"::error title={name}::{text}")
-              print(json.dumps(failure, ensure_ascii=False, indent=2))
-          '
-          done
-      # 截图和每一步的操作记录都在结果包里，下载后用 Xcode 打开
-      - name: Upload test results
-        if: ${{ failure() || cancelled() || steps.ios_tests.outputs.infrastructure_retries == 'true' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: ios-xcresult-${{ matrix.device }}-${{ matrix.suite }}-attempt-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/xcresult/
-          if-no-files-found: ignore
-          retention-days: 7
-
-  # Financial contracts need the signed StoreKit scheme, not another copy of
-  # App and UI tests. Core PRs exercise them once; financial changes and full
-  # audits retain both form factors.
-  ios-storekit:
-    needs: [changes, ios-core-reuse]
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.skip_native != 'true') && (needs.ios-core-reuse.result != 'success' || needs.ios-core-reuse.outputs.verified != 'true') }}
-    runs-on: xcode-27
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      max-parallel: 2
-      matrix:
-        device: ${{ fromJSON(needs.changes.outputs.ios_storekit_devices || '["iphone","ipad"]') }}
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: ./.github/actions/ios-test-environment
-        id: environment
-      - name: Verify local StoreKit contracts
-        id: storekit_tests
-        timeout-minutes: 15
-        env:
-          DEVICE: ${{ steps.environment.outputs[matrix.device] }}
-        run: bash scripts/run-ios-storekit-tests.sh
-      - name: Show StoreKit failures
-        timeout-minutes: 5
-        if: ${{ failure() || cancelled() }}
-        run: |
-          for bundle in "$RUNNER_TEMP"/xcresult/*.xcresult; do
-            [ -d "$bundle" ] || continue
-            xcrun xcresulttool get test-results summary --path "$bundle" | python3 -c '
-          import json, sys
-          for failure in json.load(sys.stdin).get("testFailures", []):
-              name = failure.get("testName", "")
-              text = failure.get("failureText", "")
-              print(f"::error title={name}::{text}")
-              print(json.dumps(failure, ensure_ascii=False, indent=2))
-          '
-          done
-      - name: Upload StoreKit test results
-        if: ${{ failure() || cancelled() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: ios-storekit-xcresult-${{ matrix.device }}-attempt-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/xcresult/
-          if-no-files-found: ignore
-          retention-days: 7
-
-  # Preserve the stable required-check name while requiring every native matrix cell.
-  ios:
-    needs: [changes, ios-core-reuse, ios-tests, ios-storekit]
-    if: ${{ always() }}
-    runs-on: ubuntu-latest
-    permissions: {}
-    steps:
-      - name: Require every iOS group or a verified native skip
-        env:
-          CHANGES_RESULT: ${{ needs.changes.result }}
-          SKIP_NATIVE: ${{ needs.changes.outputs.skip_native }}
-          REUSED_CORE: ${{ github.event_name == 'push' && needs.changes.outputs.core_key != '' && needs.ios-core-reuse.result == 'success' && needs.ios-core-reuse.outputs.verified == 'true' }}
-          IOS_RESULT: ${{ needs.ios-tests.result }}
-          STOREKIT_RESULT: ${{ needs.ios-storekit.result }}
-        run: |
-          if [[ "$CHANGES_RESULT" == success && "$IOS_RESULT" == skipped && "$STOREKIT_RESULT" == skipped && ("$SKIP_NATIVE" == true || "$REUSED_CORE" == true) ]]; then
-            exit 0
-          fi
-          [[ "$IOS_RESULT" == success && "$STOREKIT_RESULT" == success ]]
+          NUXT_PUBLIC_SITE_URL: https://example.com

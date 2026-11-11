@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Cook is a Chinese recipe web/mobile app for finding recipes based on available ingredients. The product is called 「料理手帐」 on Web/PWA/Android; the native iOS app keeps the home-screen name 「云食册」 with App Store name 「云食册 - 料理手帐」 (see `docs/decisions/0004-ios-app-name.md` and `0020-brand-rename-and-warm-editorial-tokens.md`). Web uses Nuxt 4 (Vue 3, CSR-only) and Ionic UI; native iOS uses SwiftUI. The Capacitor shells have been retired; native Android is planned with Kotlin and Jetpack Compose. The UI and content are in Chinese — do not translate user-facing strings.
+Cook（料理手帐）is a self-hosted Chinese recipe web app that recommends dishes from the ingredients and tools a household already has. It is a fork of the MIT-licensed [YunYouJun/cook](https://github.com/YunYouJun/cook) with the native iOS app, cloud functions, YunLeFun account system, in-app feedback and external documentation links removed. Web is Nuxt 4 (Vue 3, CSR-only, statically generated) + Ionic; a small Node account service in `server/` provides registration, login and cross-device sync. The UI and content are in Chinese — do not translate user-facing strings.
 
 ## Common Commands
 
@@ -15,22 +15,16 @@ pnpm fetch                # Pull fresh recipe data from Feishu (飞书) into rec
 pnpm validate             # Validate recipe.csv (ids, ingredient/tool dictionary, values, video ids)
 pnpm dietary:validate     # Validate dietary / institutional low-GI side tables
 pnpm amounts:check        # Check ingredient amounts in recipe data
-pnpm feedback:pull        # Pull in-app feedback + search signals from CloudBase (needs .env)
-pnpm eval:search          # Evaluate recommendation ranking against real search signals
-pnpm howtocook <dir>      # Regenerate packages/data/recipe-text.json (in-app text recipes) and .cache/recipe-images from a HowToCook checkout
-pnpm images:upload        # Upload text-recipe images to Tencent COS (needs COS_* env; CI does this on main)
-pnpm check:videos         # Offline video-id checks and coverage report; opt-in small online checks: docs/dev/data.md
-pnpm fixtures             # Regenerate shared Web/iOS fixtures (after data, alias, ranking or search changes)
-pnpm dev                  # Dev server on http://localhost:3000 (Nuxt default; 3333 is only the Docker port)
-pnpm lint                 # ESLint check (uses @antfu/eslint-config flat config)
-pnpm lint --fix           # Auto-fix lint issues
+pnpm check:videos         # Offline video-id checks and coverage report
+pnpm fixtures             # Regenerate shared fixtures (after data, alias, ranking or search changes)
+pnpm dev                  # Web dev server on http://localhost:3000 (proxies /api to :8787)
+pnpm server:dev           # Account service on http://127.0.0.1:8787 (reads root .env)
+pnpm server:test          # Account service tests (node:test)
+pnpm lint                 # ESLint check (@antfu/eslint-config flat config)
 pnpm typecheck            # Builds packages/cook, then vue-tsc on apps/web
 pnpm test                 # Run Vitest tests (watch mode)
 pnpm test -- --run        # Run tests once without watch
-pnpm test:coverage        # Vitest run with v8 coverage
 pnpm build                # Production build: convert + nuxt generate → dist/
-pnpm build:full           # fetch + convert + generate → dist/ (also pulls fresh Feishu data)
-pnpm build:site           # Web build + docs build + composed product site
 pnpm docs:dev / docs:build # VitePress documentation site
 ```
 
@@ -40,99 +34,81 @@ Run a single test file:
 pnpm test -- test/recipe.test.ts
 ```
 
-### Mobile Development
-
-```bash
-pnpm convert
-xcodegen generate --spec apps/ios/project.yml
-open apps/ios/Cook.xcodeproj
-swift test --package-path apps/ios/CookCore
-```
-
 ### Build caveats
 
-- `pnpm build` / `build:full` / `generate` go through `scripts/build-web-output.mjs` → `scripts/lib/web-build.mjs`, which **requires a Git checkout**: it records HEAD SHA + version before and after generation, fails if the source changed mid-build, and writes `.well-known/cook-build.json` provenance into `dist/`. Without `.git`, the build aborts.
-- `pnpm build` output is `apps/web/dist`, copied to the root `dist/` that deploy targets (EdgeOne, Docker) read. `edgeone.json` is copied alongside it.
+- `pnpm build` goes through `scripts/build-web-output.mjs` → `scripts/lib/web-build.mjs`, which **requires a Git checkout**: it records HEAD SHA + version before and after generation and writes `.well-known/cook-build.json` provenance into `dist/`. Without `.git`, the build aborts.
+- `pnpm build` output is `apps/web/dist`, copied to the root `dist/` that deployment targets read.
 - `pnpm typecheck` builds `packages/cook` first (`unbuild`) because `apps/web` imports `@yunyoujun/cook` from `dist/`.
 
 ## Architecture
 
 ### Data Pipeline
 
-CSV source files (`packages/data/recipe.csv`, `packages/data/incompatible-foods.csv`) → `pnpm convert` (via `packages/cook` CLI) → JSON files (`packages/data/recipe.json` + `recipe-chunk-*.json`, `incompatible-foods.json`) → consumed at runtime. The `pnpm fetch` command pulls fresh data from the Feishu (飞书) API. The generated JSON is gitignored; `recipe.csv` is the tracked source of truth.
+CSV source files (`packages/data/recipe.csv`, `packages/data/incompatible-foods.csv`) → `pnpm convert` (via `packages/cook` CLI) → JSON files (`packages/data/recipe.json`, `incompatible-foods.json`) → consumed at runtime. The generated JSON is gitignored; `recipe.csv` is the tracked source of truth. Data rules are in `docs/dev/data.md`; every recipe has a permanent `id`: never change or reuse one, and new recipes take max id + 1.
 
-Data rules, validation and the feedback loop are in `docs/dev/data.md`; every recipe has a permanent `id` column (favorites, feedback and search signals key on it): never change or reuse an id; new recipes take max id + 1.
-
-Project decisions are recorded in `docs/decisions/` — read the relevant one before changing direction, and add a new record for significant decisions.
+Project decisions are recorded in `docs/decisions/` — read the relevant one before changing direction.
 
 ### Monorepo Structure (pnpm workspaces)
 
-Layout follows `docs/decisions/0003-native-ios-monorepo.md` and `0016-native-android-and-capacitor-retirement.md`; plans are in `docs/dev/ios-roadmap.md` and `docs/dev/android-roadmap.md`. Android has no project yet; create it under `apps/android` when implementation starts.
-
-- **apps/ios/CookCore** — Swift Package porting the recommend/search/incompatible logic for the native iOS app; `swift test --package-path apps/ios/CookCore` (after `pnpm convert`) runs the shared fixtures from `packages/data/fixtures/`. Change TS and Swift logic together
-- **apps/web** — Nuxt app (main application). Root scripts (`pnpm dev`, `pnpm build`, `pnpm typecheck`) proxy to it. Keep Ionic UI and routing; the unused native CLIs from `@nuxtjs/ionic` are excluded with version-scoped pnpm overrides
-- **packages/cook** — Published as `@yunyoujun/cook`. Types, recommendation/search logic (the TS core the iOS CookCore mirrors), and the CLI (`convert`, `fetch`, `search`)
-- **packages/data** — Data shared by Web and iOS. Tracked: `recipe.csv`, `incompatible-foods.csv`, the food dictionary (`food.json`), pantry defaults (`pantry.json`), ingredient aliases (`aliases.json`), sentence-input word lists (`query.json`), fridge shelf life (`shelf-life.json`), side tables (`recipe-amounts.json`, `recipe-dietary.json`, `recipe-institutional-low-gi.json`, `video-stats.json`), offline text recipe bodies (`recipe-text.json`, from `pnpm howtocook`), shared fixtures (`fixtures/*.json`, regenerate with `pnpm fixtures`; `fixtures/query.json` is hand-written), and JSON Schemas (`schema/`). Generated + gitignored: `recipe.json`, `recipe-meta.json`, `recipe-chunk-*.json`, `incompatible-foods.json`. `recipe-meta.json` carries `schemaVersion` (bump `DATA_SCHEMA_VERSION` in `packages/cook/src/utils/config.ts` and CookCore together on breaking shape changes) and `dataVersion` (content hash)
-- **packages/shared** — Assets shared across native targets: `Assets.xcassets` (method/tool icon sets) and `links.json`
-- **docs** — VitePress documentation site (`docs/dev/`, `docs/guide/`, `docs/decisions/`)
-- **scripts** — Build/utility scripts (build provenance, data validation, fixtures, brand icon generation from `logo.png`, CI helpers, iOS test automation)
-- **cloudfunctions/** — CloudBase serverless functions: `cook-ai-intent`, `cook-feedback`, `cook-user-data`
-- **workers/** — Edge redirect worker (`docs-redirect`)
-- **skills/**, **specs/** — Project skills and feature specs; `.claude/skills/` mirrors `skills/` for Claude Code
-- **Root** — Workspace tooling, tests (`test/`) and tooling config; no legacy native shells
+- **apps/web** — Nuxt app. Root scripts (`pnpm dev`, `pnpm build`, `pnpm typecheck`) proxy to it. Ionic UI and routing are retained.
+- **server** — Self-hosted account service. Node 24 built-ins only (`node:sqlite`, `node:crypto`, `node:http`), no runtime dependencies. Serves `/api/auth/*` (register/login/logout/password), `/api/auth/me`, `/api/user-data` and `/api/admin/users`. Sessions are HttpOnly cookies; passwords use scrypt with per-user salt; registration requires `COOK_INVITE_CODE`; admin is seeded from `COOK_ADMIN_USERNAME/PASSWORD`. See `docs/dev/self-hosting.md`.
+- **packages/cook** — Published as `@yunyoujun/cook`. Types, recommendation/search logic, and the CLI (`convert`, `fetch`, `search`).
+- **packages/data** — Recipe CSV sources and generated JSON, food dictionary (`food.json`), pantry defaults, ingredient aliases, sentence-input word lists, side tables (`recipe-amounts.json`, `recipe-dietary.json`, `recipe-institutional-low-gi.json`, `video-stats.json`), fixtures (`fixtures/*.json`, regenerate with `pnpm fixtures`) and JSON Schemas. `recipe-meta.json` carries `schemaVersion` and `dataVersion`.
+- **packages/shared** — `Assets.xcassets` method/tool icons consumed by `apps/web/uno.config.ts`.
+- **docs** — VitePress documentation site.
+- **scripts** — Build provenance, data validation, fixtures, brand icon generation (`node scripts/generate-brand-icons.mjs`), CI helpers.
+- **Root** — Workspace tooling and tests (`test/`).
 
 ### App Source (`apps/web/app/`)
 
-- **pages/** — Nuxt file-based routing; main interface uses Ionic tabs (`tabs.vue`, with `tabs/home|library|apps|my`); also `recipes/*` (favorites/history/mine/new), `cookbooks/`, `catalog.vue`, `feedback.vue`, `about/*`, `apps/random`, `auth/callback.vue`
-- **components/** — Organized by feature: `recipe/`, `tags/`, `catalog/`, `cook/`, `cookbook/`, `workbench/`, `feedback/`, `user-data/`, `ylf/`, `layouts/`, `common/`
-- **composables/** — Shared logic and Pinia stores (`composables/store/`: `app`, `recipe`, `favorite`, `history`, `user`, `customRecipe`, `userData`)
-- **utils/** — Pure logic helpers (`db.ts` Dexie/IndexedDB, `recipe.ts`, `feedback.ts`, `userData.ts`, `analytics.ts`, `authInitialization.ts`, `yunlefunAuth.ts`, …)
-- **adapters/**, **plugins/** — External-service boundaries: `adapters/` wraps YunLeFun auth / feedback / user data; `plugins/` are Nuxt client plugins (clarity, acquisition, auth, user-data sync)
-- **constants/**, **config/** — SEO, links, acknowledgements; runtime config
-- **data/** — typed wrappers over `packages/data/food.json` (food/tool dictionary) and `pantry.json`
-- **types/** — TypeScript type definitions
-- **styles/** — Design tokens and global styles. `css-vars.scss` is the single source of truth for the warm-editorial palette, type scale, spacing, radii, shadows and motion; `ionic.css` only maps Ionic variables onto those tokens (Ionic `--ion-color-primary` → `--c-brand-ink` for text use, while fills use `--c-brand`). Read `docs/dev/design-system.md` and `docs/decisions/0019-warm-editorial-web-visual-direction.md` before changing colors, and never hardcode hex values in components
+- **pages/** — Nuxt file-based routing: tabs (`tabs/home|library|apps|my`), `recipes/*`, `catalog.vue`, `account.vue`, `admin/users.vue`, `settings.vue`, `cookbooks/*` (placeholder).
+- **components/** — Feature folders: `recipe/`, `tags/`, `catalog/`, `cook/`, `cookbook/`, `workbench/`, `common/`, `layouts/`, plus `ylf/` wrappers.
+- **composables/** — `useAccount` (session state), `useAccountSync` (merge + debounced upload), Pinia-like stores in `composables/store/` (`app`, `recipe`, `favorite`, `history`, `customRecipe`, `userData`).
+- **utils/** — Pure helpers: `db.ts` (Dexie), `storageScope.ts` (per-account localStorage namespacing), `userData.ts` (merge/export format), `recipe.ts`, `analytics.ts`, `yunleHost.ts`.
+- **plugins/** — `account.client.ts` refreshes the session and starts sync; `clarity.client.ts`, `acquisition.client.ts`, `yunle-host.client.ts`.
+- **styles/** — `css-vars.scss` is the single source of truth for the warm-editorial palette, type scale, spacing, radii, shadows and motion; `ionic.css` maps Ionic variables onto those tokens. Read `docs/dev/design-system.md` before changing colors and never hardcode hex values in components.
 
 ### Key Patterns
 
-- **CSR-only**: SSR is disabled in `apps/web/nuxt.config.ts` (`ssr: false`); app is statically generated
-- **Client storage**: Dexie (IndexedDB) for favorites, history, user preferences — enables offline support
-- **Styling**: UnoCSS with Wind preset (Tailwind-compatible), attributify mode, and token-driven shortcuts (`tag`, `pureTag`, `btn`)
-- **Dark mode**: Class-based via `@nuxtjs/color-mode` (classSuffix: ''); Ionic surfaces follow via the `ion-palette-dark` class, and the warm dark palette is defined in `css-vars.scss`
-- **Responsive breakpoints**: exactly three — mobile <768px, tablet 768–1199px (icon rail + two columns), desktop ≥1200px (full sidebar + three columns). Do not introduce one-off 1024/1280 breakpoints
-- **Brand assets**: `logo.png` at the repo root is the only design source; run `node scripts/generate-brand-icons.mjs` to regenerate Web favicons, PWA icons and iOS app icons
-- **Icons**: Iconify with multiple packs (carbon, mdi, twemoji); food tool icons dynamically safelisted in `apps/web/uno.config.ts`
-- **Data imports**: `@cook/data` is aliased to `packages/data` in `apps/web/nuxt.config.ts`; `@yunyoujun/cook/*` resolves to the built `packages/cook/dist` exports (recommend, custom-recipes, personal-catalog, reviewed-data)
+- **CSR-only**: `ssr: false`; the app is statically generated.
+- **Client storage**: Dexie/IndexedDB for the recipe database; localStorage for favorites, history, custom recipes, personal catalog and sync metadata. Keys are scoped by account (`cook:u<id>:<name>`) after login, anonymous (`cook:<name>`) otherwise.
+- **Account isolation**: server endpoints derive the user from the session cookie; the client never sends another user's id. Admin can list/delete accounts and reset passwords but cannot read other users' recipe data.
+- **Sync**: local-first. On login the client pulls the server copy, merges with `mergeUserData`, writes local, and uploads when different; later changes upload debounced. Account switches do not merge the previous account's data.
+- **Styling**: UnoCSS with Wind preset, attributify mode, token-driven shortcuts (`tag`, `pureTag`, `btn`).
+- **Dark mode**: class-based via `@nuxtjs/color-mode`; Ionic surfaces follow `ion-palette-dark`.
+- **Responsive breakpoints**: exactly three — mobile <768px, tablet 768–1199px (icon rail + two columns), desktop ≥1200px (full sidebar + three columns).
+- **Brand assets**: `logo.png` at the repo root is the only design source; run `node scripts/generate-brand-icons.mjs` to regenerate favicons, PWA icons and documentation-site icons.
 
 ### Prerendered Routes
 
-Defined in `apps/web/nuxt.config.ts` → `nitro.prerender.routes`: `/`, `/home`, `/library`, `/apps`, `/my`, `/catalog`, `/recipes/favorites`, `/recipes/history`, `/random`, `/help`, `/feedback`, `/user`, `/404`, `/settings`, `/auth/callback`.
+`apps/web/nuxt.config.ts` → `nitro.prerender.routes`: `/`, `/home`, `/library`, `/apps`, `/my`, `/catalog`, `/recipes/favorites`, `/recipes/history`, `/recipes/mine`, `/recipes/new`, `/account`, `/random`, `/404`, `/settings`.
 
 ## Testing
 
-Tests live in `test/` plus colocated unit tests in `packages/cook/src/**/*.test.ts`. Vitest uses jsdom environment with setup in `test/setup.ts`. Config in `vitest.config.ts` (also `vitest.nuxt.config.ts` for the Nuxt environment).
+Vitest covers `test/**/*.test.ts` and colocated `packages/cook/src/**/*.test.ts`; jsdom with setup in `test/setup.ts`. The account service uses Node's built-in runner:
 
 ```bash
-pnpm test -- test/recipe.test.ts          # one file
-pnpm test -- --run                        # single pass, no watch
-pnpm test -- --run test/userDataSync.test.ts
+pnpm test -- --run test/recipe.test.ts
+pnpm server:test
 ```
-
-The suite covers web app logic, cloud functions, CI/build scripts, data contracts and Swift/TS parity (`test/iosCoreReuse.test.mjs`).
 
 ## Code Style
 
-Uses `@antfu/eslint-config` (flat config) with UnoCSS and formatters enabled. Pre-commit hook runs `lint-staged` via `simple-git-hooks`. Ignored paths include `packages/data/**/*.json` and `dist/`.
+`@antfu/eslint-config` (flat config) with UnoCSS and formatters. Pre-commit runs `lint-staged` via `simple-git-hooks`. Ignored paths include `packages/data/**/*.json`, `skills/frontend-design-direction/**` and `dist/`.
 
 ## Environment Variables
 
 See `.env.example`:
 
-- `FEISHU_APP_ID` / `FEISHU_APP_SECRET` — For fetching recipe data from Feishu
-- `COS_*` — Tencent COS credentials for `pnpm images:upload`
-- `APPLE_DEVELOPMENT_TEAM` — iOS signing
+- `FEISHU_APP_ID` / `FEISHU_APP_SECRET` — pulling recipe data from Feishu
+- `COOK_DB_PATH` — SQLite file for the account service
+- `COOK_ADMIN_USERNAME` / `COOK_ADMIN_PASSWORD` — seeded admin on first start
+- `COOK_INVITE_CODE` — registration invite code; empty disables registration
+- `COOK_COOKIE_SECURE` — set to `1` behind HTTPS
+- `COOK_ALLOWED_ORIGINS` — allowed origins for mutating API requests
+- `NUXT_PUBLIC_SITE_URL` — public origin baked into canonical/OG/sitemap at build time
 
 ## Node/Package Manager
 
-- Node.js: `24.22.2` (per `.nvmrc`; `engines.node` is `^24.15.0`) — see `docs/dev/node-runtime.md`
+- Node.js: `24.22.2` (per `.nvmrc`; `engines.node` is `^24.15.0`)
 - pnpm: 11.21.0 (enforced via `packageManager` field)

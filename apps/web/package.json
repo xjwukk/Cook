@@ -12,7 +12,6 @@
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
-    "@cloudbase/js-sdk": "3.7.1",
     "@yunlefun/sso": "0.7.0",
     "@yunyoujun/cook": "workspace:*",
     "dayjs": "^1.11.21",

@@ -12,6 +12,8 @@ export default defineConfig(withYunlefun({
   lang: 'zh-CN',
   title: '云食册',
   cleanUrls: true,
+  // 方案记录保留项目历史，其中指向已移除 iOS 文档的链接不再校验。
+  ignoreDeadLinks: true,
   description: '有什么食材，就做什么菜。云食册产品官网、iOS 发布信息与料理手帐使用文档。',
   sitemap: {
     hostname: 'https://cook.yunle.fun',
@@ -57,17 +59,14 @@ export default defineConfig(withYunlefun({
     },
 
     footer: {
-      message: '运营主体：海州区云乐坊信息技术工作室<br><a href="/terms">用户协议</a> · <a href="/privacy">iOS 隐私政策</a> · <a href="mailto:me@yunyoujun.cn">联系开发者</a>',
-      copyright: '© 2022–2026 云游君（YunYouJun） · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">苏ICP备2023020936号</a>',
+      message: '自托管部署 · <a href="/terms">用户协议</a> · <a href="/privacy">隐私政策</a>',
+      copyright: '基于 Cook 开源项目（MIT）· 原项目 © 云游君（YunYouJun）',
     },
     nav: [
-      { text: '产品官网', link: '/' },
       { text: '使用指南', link: '/guide/getting-started' },
-      { text: 'iOS 测试安装', link: '/guide/ios-beta#testflight' },
       { text: '开发文档', link: '/dev/cli' },
       { text: '方案记录', link: '/decisions/' },
-      { text: 'iOS 隐私政策', link: '/privacy' },
-      { text: '打开网页版', link: 'https://cook.yunyoujun.cn/', target: '_self' },
+      { text: '打开网页版', link: '/', target: '_self' },
     ],
 
     sidebar: {
@@ -76,11 +75,9 @@ export default defineConfig(withYunlefun({
           text: '使用指南',
           items: [
             { text: '快速开始', link: '/guide/getting-started' },
-            { text: 'Web 与 iOS 的定位', link: '/guide/web-and-ios' },
             { text: '一句话找菜', link: '/guide/sentence-input' },
             { text: '第二天带饭', link: '/guide/next-day-lunch' },
             { text: '网页版域名与原有数据', link: '/guide/web-domain' },
-            { text: '云食册 iOS 测试安装', link: '/guide/ios-beta#testflight' },
           ],
         },
       ],
@@ -88,19 +85,14 @@ export default defineConfig(withYunlefun({
         {
           text: '开发文档',
           items: [
+            { text: '自托管部署', link: '/dev/self-hosting' },
             { text: 'Cook CLI', link: '/dev/cli' },
             { text: '文档站部署', link: '/dev/docs-site' },
             { text: 'Docker 部署', link: '/dev/docker' },
-            { text: '移动应用', link: '/dev/app' },
-            { text: '原生 Android 开发计划', link: '/dev/android-roadmap' },
-            { text: 'TestFlight 外部测试', link: '/dev/ios-external-testflight' },
-            { text: '外测自动化与反馈', link: '/dev/testflight-automation' },
             { text: '菜谱数据', link: '/dev/data' },
             { text: '私人菜谱与文件迁移', link: '/dev/private-recipes' },
-            { text: '图文做法配图', link: '/dev/recipe-images' },
             { text: '食材模型展柜', link: '/dev/ingredient-models' },
-            { text: '云厨房实现', link: '/dev/cloud-kitchen' },
-            { text: 'iOS App 打磨目标', link: '/dev/ios-roadmap' },
+            { text: '设计系统', link: '/dev/design-system' },
           ],
         },
       ],
@@ -125,6 +117,10 @@ export default defineConfig(withYunlefun({
             { text: '0014 个人食材和厨具', link: '/decisions/0014-personal-catalog' },
             { text: '0015 官网与网页版域名分工', link: '/decisions/0015-product-site-domains' },
             { text: '0016 原生 Android 与外壳退役', link: '/decisions/0016-native-android-and-capacitor-retirement' },
+            { text: '0017 离线视频校验', link: '/decisions/0017-offline-video-checks' },
+            { text: '0018 冰箱拍照录入', link: '/decisions/0018-fridge-photo-intake' },
+            { text: '0019 Web 视觉方向', link: '/decisions/0019-warm-editorial-web-visual-direction' },
+            { text: '0020 品牌更名与视觉令牌', link: '/decisions/0020-brand-rename-and-warm-editorial-tokens' },
           ],
         },
       ],

@@ -1,0 +1,15 @@
+{
+  "name": "@cook/server",
+  "type": "module",
+  "version": "1.0.0",
+  "private": true,
+  "description": "料理手帐自托管账号与同步服务（Node 内置模块，无运行时依赖）",
+  "engines": {
+    "node": "^24.15.0"
+  },
+  "scripts": {
+    "dev": "node --env-file-if-exists=../.env --watch src/index.mjs",
+    "start": "node --env-file-if-exists=../.env src/index.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}

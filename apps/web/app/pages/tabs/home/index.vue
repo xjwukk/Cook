@@ -52,30 +52,12 @@ function scrollTop() {
   void contentRef.value?.$el.scrollToTop(reducedMotion.value === 'reduce' ? 0 : 300)
 }
 
-const feedback = useRecipeFeedback()
-const selection = () => ({ stuff: rStore.selectedStuff, tool: rStore.curTool || undefined, mode: rStore.curMode })
-
 const detail = shallowRef<{ recipe: RecipeItem, match?: RecipeMatch }>()
 const detailOpen = ref(false)
 function openDetail(recipe: RecipeItem, match?: RecipeMatch) {
   detail.value = { recipe, match }
   detailOpen.value = true
-
-  // 匿名记录「这组食材下点开了第几个结果」，用来评估和调整排序
-  const rank = match ? rStore.recipeMatches.indexOf(match) : -1
-  if (!rStore.hasReviewedSelection && rank >= 0 && typeof recipe.id === 'number')
-    feedback.signal({ type: 'open', ...selection(), recipeId: recipe.id, rank })
 }
-
-// 停在一组没有结果的食材上时记一次，用来发现缺哪些菜
-watchDebounced(
-  () => [rStore.isSearching, rStore.recipesLength, rStore.selectedStuff.join('、'), rStore.curTool, rStore.curMode, rStore.keyword, rStore.recipeMatches.length, rStore.hasReviewedSelection],
-  () => {
-    if (cookingStyle.value === 'classic' && !rStore.hasReviewedSelection && !rStore.isSearching && rStore.recipesLength && rStore.selectedStuff.length && !rStore.keyword && !rStore.recipeMatches.length)
-      feedback.signal({ type: 'empty', ...selection() })
-  },
-  { debounce: 3000 },
-)
 </script>
 
 <template>
@@ -106,8 +88,6 @@ watchDebounced(
     </ion-header>
 
     <ion-content ref="contentRef" :class="{ 'workbench-content': cookingStyle === 'workbench', 'desktop-classic-content': desktop && cookingStyle === 'classic' }" :style="{ '--padding-bottom': `${cookingStyle === 'classic' && !desktop ? panelInset + 16 : 16}px` }">
-      <IosBetaCard dismissible />
-
       <p v-if="!canPersist" class="style-storage-note" role="status">
         浏览器暂时无法保存样式偏好，本次仍可切换使用。
       </p>

@@ -2,7 +2,6 @@
 import type { RecipeMatch } from '@yunyoujun/cook'
 import type { RecipeItem } from '~/types'
 import { uniqueStuff } from '@yunyoujun/cook/recommend'
-import RecipeFeedbackButton from '~/components/feedback/RecipeButton.vue'
 import { isFavorited, toggleFavorite } from '~/composables/store/favorite'
 import { addRecipeHistory } from '~/composables/store/history'
 import { getEmojisFromStuff } from '~/utils'
@@ -188,7 +187,6 @@ function onPresented() {
         </template>
         <template v-else>
           食材来自菜谱记录，用量和调味以{{ reviewedTextLink || !recipe.bv ? '做法原文' : '视频' }}为准。
-          <RecipeFeedbackButton :recipe="recipe" />
         </template>
       </p>
     </ion-content>

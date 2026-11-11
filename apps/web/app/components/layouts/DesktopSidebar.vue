@@ -73,7 +73,6 @@ function navigate(event: MouseEvent, href: string) {
         <ion-icon class="desktop-sidebar-icon" :icon="path === '/settings' ? ioniconsSettings : ioniconsSettingsOutline" aria-hidden="true" />
         <span class="desktop-sidebar-label">设置</span>
       </a>
-      <LegacyVersionLink :title="collapsed ? '切换到旧版' : undefined" aria-label="切换到旧版" />
       <button class="desktop-sidebar-toggle" type="button" :aria-label="collapsed ? '展开侧栏' : '收起侧栏'" :title="collapsed ? '展开侧栏' : '收起侧栏'" :aria-expanded="!collapsed" @click="collapsed = !collapsed">
         <ion-icon class="desktop-sidebar-icon" :icon="ioniconsMenuOutline" aria-hidden="true" />
         <span class="desktop-sidebar-label">收起侧栏</span>

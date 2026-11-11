@@ -2,20 +2,10 @@
 import { readFileSync } from 'node:fs'
 import { createGenerator } from 'unocss'
 import { describe, expect, it } from 'vitest'
-import { links } from '../apps/web/app/constants/links'
 import unoConfig from '../apps/web/uno.config'
-import sharedLinks from '../packages/shared/links.json'
 
-describe('shared WeChat resources', () => {
-  it('exposes the shared customer support destination to the web app', () => {
-    expect(links.wecomKf).toBe(sharedLinks.wecomKf)
-    const url = new URL(links.wecomKf)
-    expect(url.protocol).toBe('https:')
-    expect(url.hostname).toBe('work.weixin.qq.com')
-    expect(url.pathname).toMatch(/^\/kfid\/[^/]+$/)
-  })
-
-  it('generates the web icon from the SVG used by the iOS asset catalog', async () => {
+describe('shared native icon assets', () => {
+  it('generates the web icon from the SVG used by the native asset catalog', async () => {
     const svg = readFileSync(new URL('../packages/shared/Assets.xcassets/wechat.imageset/icon.svg', import.meta.url), 'utf8')
     const path = /<path d="([^"]+)"/.exec(svg)?.[1]
     expect(path).toBeTruthy()

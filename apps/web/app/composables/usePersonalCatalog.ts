@@ -3,11 +3,11 @@ import type { StuffItem } from '~/types'
 import { useEventListener } from '@vueuse/core'
 import { catalogItems, emptyPersonalCatalog } from '@yunyoujun/cook/personal-catalog'
 import { computed, onMounted, shallowRef } from 'vue'
-import { namespace } from '~/constants'
 import * as base from '~/data/food'
 import { readPersonalCatalog, updatePersonalCatalog } from '~/utils/personalCatalogStorage'
+import { scopedKey } from '~/utils/storageScope'
 
-const key = `${namespace}:personal-catalog`
+const key = scopedKey('personal-catalog')
 const value = shallowRef(emptyPersonalCatalog())
 const error = shallowRef('')
 export const catalogTitles = { vegetable: '蔬菜', meat: '肉和蛋', staple: '主食', tools: '厨具' }

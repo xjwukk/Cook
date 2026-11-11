@@ -1,11 +1,8 @@
-import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 import { defineNuxtConfig } from 'nuxt/config'
 import { simpleGit } from 'simple-git'
-import { appStoreId } from './app/constants/index'
 import { applyCookRouteSeo, cookDocumentHead } from './app/constants/seo'
 
 // for cloudflare
@@ -95,8 +92,6 @@ export default defineNuxtConfig({
         // 与 iOS 模式的页面 / 导航栏背景一致
         { name: 'theme-color', media: '(prefers-color-scheme: light)', content: '#fbf7f0' },
         { name: 'theme-color', media: '(prefers-color-scheme: dark)', content: '#17130f' },
-        // Safari 顶部的「在 App Store 中打开」横幅，需要写在静态 HTML 里才会生效
-        ...(appStoreId ? [{ name: 'apple-itunes-app', content: `app-id=${appStoreId}` }] : []),
       ],
       script: [
         ...seoHead.script,
@@ -127,21 +122,9 @@ export default defineNuxtConfig({
   spaLoadingTemplate: 'spa-loading-template.html',
   runtimeConfig: {
     public: {
-      feedbackVersion: JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version as string,
-      feedbackBuild: process.env.VITE_COMMIT_REF || '',
-      feedbackRecipeVersion: createHash('sha256').update(readFileSync(new URL('../../packages/data/recipe.csv', import.meta.url))).digest('hex').slice(0, 12),
-      clarityProjectId: process.env.NUXT_PUBLIC_CLARITY_PROJECT_ID ?? 'ks1ebw03i5',
-      clarityDomains: process.env.NUXT_PUBLIC_CLARITY_DOMAINS ?? 'cook.yunyoujun.cn,cook.yunle.fun',
-      yunlefunCloudbaseEnv: process.env.NUXT_PUBLIC_YUNLEFUN_CLOUDBASE_ENV || 'yunlefun-8g7ybcxc7345c490',
-      yunlefunSsoClientId: process.env.NUXT_PUBLIC_YUNLEFUN_SSO_CLIENT_ID || 'cook-web',
-      yunlefunSsoExchangeUrl: process.env.NUXT_PUBLIC_YUNLEFUN_SSO_EXCHANGE_URL || 'https://api.yunle.fun/sso-ticket',
-      yunlefunSsoOrigin: process.env.NUXT_PUBLIC_YUNLEFUN_SSO_ORIGIN || 'https://www.yunle.fun',
-      yunlefunSsoRedirectUri: process.env.NUXT_PUBLIC_YUNLEFUN_SSO_REDIRECT_URI || 'https://cook.yunyoujun.cn/auth/callback',
-      yunlefunSsoRedirectUris: process.env.NUXT_PUBLIC_YUNLEFUN_SSO_REDIRECT_URIS || [
-        process.env.NUXT_PUBLIC_YUNLEFUN_SSO_REDIRECT_URI || 'https://cook.yunyoujun.cn/auth/callback',
-        'https://cook.yunle.fun/auth/callback',
-      ].join(','),
-      yunlefunSsoScope: process.env.NUXT_PUBLIC_YUNLEFUN_SSO_SCOPE || 'identity:bootstrap',
+      siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+      clarityProjectId: process.env.NUXT_PUBLIC_CLARITY_PROJECT_ID ?? '',
+      clarityDomains: process.env.NUXT_PUBLIC_CLARITY_DOMAINS ?? '',
     },
   },
 
@@ -169,6 +152,10 @@ export default defineNuxtConfig({
   compatibilityDate: '2025-05-15',
 
   nitro: {
+    // 开发时把 /api 转发给本地账号服务（生产由 Nginx 反代）。
+    devProxy: {
+      '/api': { target: 'http://127.0.0.1:8787/api', changeOrigin: true },
+    },
     esbuild: {
       options: {
         target: 'esnext',
@@ -176,7 +163,7 @@ export default defineNuxtConfig({
     },
     prerender: {
       crawlLinks: false,
-      routes: ['/', '/home', '/library', '/apps', '/my', '/catalog', '/recipes/favorites', '/recipes/history', '/random', '/help', '/feedback', '/user', '/404', '/settings', '/auth/callback'],
+      routes: ['/', '/home', '/library', '/apps', '/my', '/catalog', '/recipes/favorites', '/recipes/history', '/recipes/mine', '/recipes/new', '/account', '/random', '/404', '/settings'],
       ignore: ['/hi'],
     },
   },

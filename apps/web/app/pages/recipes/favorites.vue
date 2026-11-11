@@ -1,7 +1,6 @@
 <script lang="ts" setup>
 import type { IonSearchbarCustomEvent, SearchbarInputEventDetail } from '@ionic/core'
 import type { DbRecipeItem } from '~/utils/db'
-import RecipeFeedbackButton from '~/components/feedback/RecipeButton.vue'
 import { getFavoriteTime, isFavorited, toggleFavorite } from '~/composables/store/favorite'
 import { db } from '~/utils/db'
 import { confirmDestructive } from '~/utils/dialog'
@@ -16,7 +15,6 @@ definePageMeta({
 const loading = ref(true)
 const allRecipes = shallowRef<DbRecipeItem[]>([])
 const recipes = computed(() => allRecipes.value.filter(r => isFavorited(r)))
-const { scopeBlocked, scopeRevision } = useUserDataSync()
 const keyword = ref('')
 const sortKey = ref<'time' | 'name'>('time')
 
@@ -50,10 +48,7 @@ async function loadFavorites() {
 onMounted(loadFavorites)
 
 async function clearAllFavorites() {
-  const revision = scopeRevision.value
   if (!await confirmDestructive({ header: '将取消所有收藏', confirmText: '清空收藏' }))
-    return
-  if (scopeBlocked.value || scopeRevision.value !== revision)
     return
   for (const item of recipes.value)
     toggleFavorite(item)
@@ -61,7 +56,7 @@ async function clearAllFavorites() {
 }
 
 function onToggleFavorite(item: DbRecipeItem) {
-  if (scopeBlocked.value || !isFavorited(item))
+  if (!isFavorited(item))
     return
   toggleFavorite(item)
   void yunleHaptic('medium')
@@ -124,7 +119,6 @@ function onToggleFavorite(item: DbRecipeItem) {
               <ion-label class="truncate">
                 <DishLabel class="text-sm" :dish="item" />
               </ion-label>
-              <RecipeFeedbackButton slot="end" :recipe="item" compact />
               <ion-icon slot="end" :icon="ioniconsStar" color="warning" />
             </ion-item>
 
