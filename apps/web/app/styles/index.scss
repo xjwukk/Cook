@@ -76,7 +76,7 @@ hr {
   // border: 1px solid var(--c-ink);
 }
 
-/* 编辑式排版点缀：衬线只用于拉丁字母与数字，中文字形不受影响 */
+/* 编辑式排版点缀：数字使用等宽数位，便于对读计数 */
 .cook-num {
   font-family: var(--font-display);
   font-variant-numeric: lining-nums tabular-nums;

@@ -28,7 +28,7 @@ export function anonymousKey(name: string): string {
 }
 
 const MIGRATION_FLAG = `${namespace}:anonymous-migrated`
-const MIGRATED_NAMES = ['favorites', 'history', 'custom-recipes', 'personal-catalog', 'sync']
+const MIGRATED_NAMES = ['favorites', 'history', 'custom-recipes', 'personal-catalog', 'sync', 'kitchen']
 
 /**
  * 首次登录时把匿名空间的数据复制到当前账号，只复制一次。

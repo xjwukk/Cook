@@ -159,6 +159,7 @@ describe('normalizeUserData', () => {
       historyClearedAt: 'soon',
     })
     expect(result).toEqual({
+      kitchen: createEmptyUserData().kitchen,
       favorites: [{ id: 1, time: NOW }],
       favoriteRemovals: [],
       histories: [{ recipe: { name: 'A', stuff: ['土豆'], tools: [], tags: ['快手'] }, time: NOW }],

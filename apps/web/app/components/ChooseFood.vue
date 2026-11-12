@@ -33,13 +33,7 @@ onMounted(() => {
 
 const { playAnimation } = useEmojiAnimation(computed(() => unref(props.flightTarget)))
 
-const { sections, food } = usePersonalCatalog()
-const tools = computed<StuffItem[]>(() => {
-  const visible = food.value.tools
-  return rStore.curTool && !visible.some(item => item.name === rStore.curTool)
-    ? [...visible, { name: rStore.curTool, emoji: '🍳' }]
-    : visible
-})
+const { sections, tools } = useWorkbenchCatalog(() => rStore.effectiveTool, () => rStore.onlyOwned)
 
 /** 展开了「更多」的分组，记住用户的选择 */
 const expanded = useStorage<string[]>(`${namespace}:food-more-expanded`, [])
@@ -86,6 +80,7 @@ function clickTool(item: StuffItem) {
 <template>
   <div class="choose-food" :class="{ 'choose-food-desktop': desktop }">
     <IngredientInput
+      v-if="!rStore.onlyOwned"
       :selected="selected"
       :parse="rStore.parseText"
       placeholder="输入食材或一句话"
@@ -120,7 +115,7 @@ function clickTool(item: StuffItem) {
       </IngredientSection>
     </div>
 
-    <IngredientSection title="厨具（可选）" :icon="categoryIcons.tools" :note="rStore.curTool ? '已选' : ''">
+    <IngredientSection title="厨具（可选）" :icon="categoryIcons.tools" :note="rStore.effectiveTool ? '已选' : ''">
       <template #actions>
         <NuxtLink class="choose-food-manage" to="/catalog">
           管理食材和厨具
@@ -131,7 +126,7 @@ function clickTool(item: StuffItem) {
         :key="item.name"
         :label="item.name === '一口大锅' ? '炒锅' : (item.label || item.name)"
         :icon="toolIcons[item.name] || item.icon"
-        :selected="rStore.curTool === item.name"
+        :selected="rStore.effectiveTool === item.name"
         @click="clickTool(item)"
       />
     </IngredientSection>
@@ -157,7 +152,13 @@ function clickTool(item: StuffItem) {
       />
     </IngredientSection>
 
-    <IngredientSection v-if="desktop" title="家里常备" :icon="categoryIcons.pantry" :note="`已选 ${rStore.selectedPantry.length} 种调料`">
+    <IngredientSection v-if="rStore.onlyOwned" title="厨房常备调料" :icon="categoryIcons.pantry" :note="`${rStore.selectedPantry.length} 种`">
+      <span>{{ rStore.selectedPantry.join('、') || '尚未确认调料' }}</span>
+      <NuxtLink class="choose-food-manage" to="/kitchen">
+        去我的厨房调整
+      </NuxtLink>
+    </IngredientSection>
+    <IngredientSection v-if="desktop && !rStore.onlyOwned" title="家里常备" :icon="categoryIcons.pantry" :note="`已选 ${rStore.selectedPantry.length} 种调料`">
       <IngredientChip
         v-for="name in pantryOptions"
         :key="name"
@@ -182,7 +183,7 @@ function clickTool(item: StuffItem) {
       <IngredientSectionLabel :title="desktop ? '忌口' : '调料和忌口'" :icon="desktop ? categoryIcons.avoid : categoryIcons.pantry" />
     </h2>
     <ion-list :inset="true" class="choose-food-pantry">
-      <ion-item v-if="!desktop" :button="true" @click="pantryOpen = true">
+      <ion-item v-if="!desktop && !rStore.onlyOwned" :button="true" @click="pantryOpen = true">
         <ion-label>家里常备</ion-label>
         <ion-note slot="end" class="choose-food-pantry-value">
           {{ rStore.selectedPantry.length ? rStore.selectedPantry.join('、') : '未选择' }}
@@ -202,6 +203,7 @@ function clickTool(item: StuffItem) {
     </ion-list>
 
     <PantrySheet
+      v-if="!rStore.onlyOwned"
       v-model:open="pantryOpen"
       :selected="rStore.selectedPantry"
       @toggle="rStore.togglePantry"

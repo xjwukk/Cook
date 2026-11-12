@@ -98,11 +98,19 @@ function handleSyncClick(): void {
           <CookListIcon slot="start" :icon="ioniconsStarOutline" color="#d98324" />
           <ion-label>我的收藏</ion-label>
         </ion-item>
+        <ion-item :button="true" router-link="/kitchen">
+          <CookListIcon slot="start" :icon="ioniconsBasketOutline" color="var(--c-herb)" />
+          <ion-label>
+            <h2>我的厨房</h2>
+            <p>现有食材、厨具与常备调料</p>
+          </ion-label>
+        </ion-item>
         <ion-item :button="true" router-link="/catalog">
-          <CookListIcon slot="start" color="#4a7c59">
-            <span class="i-mdi-carrot h-4.5 w-4.5" />
-          </CookListIcon>
-          <ion-label>食材和厨具</ion-label>
+          <CookListIcon slot="start" :icon="ioniconsGridOutline" color="var(--c-brand-ink)" />
+          <ion-label>
+            <h2>条目管理</h2>
+            <p>自定义条目、隐藏与恢复</p>
+          </ion-label>
         </ion-item>
         <ion-item router-link="/recipes/mine">
           <CookListIcon slot="start" :icon="ioniconsBookOutline" color="#a2845e" />

@@ -12,7 +12,7 @@ const pantry = defineModel<string[]>('pantry', { required: true })
 const rStore = useRecipeStore()
 const pointerFine = useMediaQuery('(hover: hover) and (pointer: fine)')
 const reducedMotion = usePreferredReducedMotion()
-const { sections: categories, ingredients: allFood, tools, acceptsIngredient } = useWorkbenchCatalog(() => rStore.curTool)
+const { sections: categories, ingredients: allFood, tools, acceptsIngredient } = useWorkbenchCatalog(() => rStore.effectiveTool, () => rStore.onlyOwned)
 const category = ref(0)
 const query = ref('')
 const expanded = ref(false)
@@ -20,7 +20,8 @@ const expanded = ref(false)
 const pantryExpanded = shallowRef(false)
 const filtersExpanded = shallowRef(false)
 const avoidOpen = ref(false)
-const matches = computed(() => rStore.recommendWithPantry(pantry.value))
+const activePantry = computed(() => rStore.onlyOwned ? rStore.selectedPantry : pantry.value)
+const matches = computed(() => rStore.recommendWithPantry(activePantry.value))
 const browseMode = computed(() => !rStore.selectedStuff.length)
 const count = computed(() => browseMode.value ? rStore.browseRecipes.length : matches.value.length)
 const limit = ref(8)
@@ -97,7 +98,7 @@ function dropIngredient(event: DragEvent) {
 
 function addUnlisted() {
   const name = query.value.trim()
-  if (name) {
+  if (name && !rStore.onlyOwned) {
     rStore.addStuff(name)
     query.value = ''
   }
@@ -140,7 +141,7 @@ function addUnlisted() {
         <button v-if="!query && hasMore" class="wb-text-button" type="button" :aria-expanded="expanded" @click="expanded = !expanded">
           {{ expanded ? '收起食材' : `全部 ${categories[category]!.items.length} 种食材` }}
         </button>
-        <div v-if="query && !visibleItems.length" class="wb-empty-search">
+        <div v-if="query && !visibleItems.length && !rStore.onlyOwned" class="wb-empty-search">
           <p>列表中没有「{{ query }}」，加入后只查找现有菜谱。</p>
           <button class="wb-button" type="button" @click="addUnlisted">
             加入这项食材
@@ -155,19 +156,22 @@ function addUnlisted() {
 
         <details class="wb-settings" :open="desktop || pantryExpanded">
           <summary :role="desktop ? 'heading' : undefined" :aria-level="desktop ? 3 : undefined" :tabindex="desktop ? -1 : undefined" @click.prevent="!desktop && (pantryExpanded = !pantryExpanded)">
-            家里现有的调料 <span>{{ pantry.length }} 种</span>
+            家里现有的调料 <span>{{ activePantry.length }} 种</span>
           </summary>
           <p class="wb-hint">
-            选择这次可用的调料，单独保存于此视图。
+            {{ rStore.onlyOwned ? '调料来自我的厨房，请在那里调整。' : '选择这次可用的调料，单独保存于此视图。' }}
           </p>
-          <div class="wb-pills" role="group" aria-label="已确认有的调料">
+          <NuxtLink v-if="rStore.onlyOwned" class="wb-text-button" to="/kitchen">
+            {{ activePantry.join('、') || '尚未确认调料' }} · 去厨房调整
+          </NuxtLink>
+          <div v-else class="wb-pills" role="group" aria-label="已确认有的调料">
             <button v-for="name in pantryOptions" :key="name" type="button" :aria-pressed="pantry.includes(name)" @click="togglePantry(name)">
               <span v-if="pantry.includes(name)" aria-hidden="true">✓ </span>{{ name }}
             </button>
           </div>
         </details>
         <p class="wb-hint wb-pantry-summary">
-          {{ pantry.length ? `已确认调料：${pantry.join('、')}` : '调料尚未确认；不默认有油、盐。' }}
+          {{ activePantry.length ? `已确认调料：${activePantry.join('、')}` : '调料尚未确认；不默认有油、盐。' }}
         </p>
         <details class="wb-settings" :open="desktop || filtersExpanded">
           <summary :role="desktop ? 'heading' : undefined" :aria-level="desktop ? 3 : undefined" :tabindex="desktop ? -1 : undefined" @click.prevent="!desktop && (filtersExpanded = !filtersExpanded)">
@@ -210,22 +214,22 @@ function addUnlisted() {
               <span class="wb-emoji" aria-hidden="true">{{ emoji(name) }}</span>
               <span>{{ name }}</span>
             </button>
-            <p v-if="!rStore.selectedStuff.length" class="wb-selection-empty">
+            <p v-if="!rStore.onlyOwned && !rStore.selectedStuff.length" class="wb-selection-empty">
               从食材列表中点选，或拖入食材。
             </p>
           </div>
           <p class="wb-board-note">
             点按已选食材即可移除。
           </p>
-          <button v-if="!rStore.selectedStuff.length" class="wb-example" type="button" @click="example">
+          <button v-if="!rStore.onlyOwned && !rStore.selectedStuff.length" class="wb-example" type="button" @click="example">
             试一试：番茄 + 鸡蛋 + 炒锅 <span aria-hidden="true">→</span>
           </button>
         </div>
         <div class="wb-tools wb-panel">
           <h2>厨具 <span>（可选）</span></h2>
           <div class="wb-pills" role="group" aria-label="工作台厨具">
-            <button v-for="tool in tools" :key="tool.name" type="button" :aria-pressed="rStore.curTool === tool.name" @click="rStore.clickTool(tool)">
-              <span v-if="toolIcons[tool.name] || tool.icon" class="wb-cooking-icon" :class="toolIcons[tool.name] || tool.icon" aria-hidden="true" /><span v-else aria-hidden="true">{{ tool.emoji }}</span>{{ tool.name === '一口大锅' ? '炒锅' : tool.name }}<span v-if="rStore.curTool === tool.name" aria-hidden="true">✓</span>
+            <button v-for="tool in tools" :key="tool.name" type="button" :aria-pressed="rStore.effectiveTool === tool.name" @click="rStore.clickTool(tool)">
+              <span v-if="toolIcons[tool.name] || tool.icon" class="wb-cooking-icon" :class="toolIcons[tool.name] || tool.icon" aria-hidden="true" /><span v-else aria-hidden="true">{{ tool.emoji }}</span>{{ tool.name === '一口大锅' ? '炒锅' : tool.name }}<span v-if="rStore.effectiveTool === tool.name" aria-hidden="true">✓</span>
             </button>
           </div>
         </div>
@@ -261,7 +265,7 @@ function addUnlisted() {
         <div v-else-if="rStore.isSearching" class="wb-empty">
           <p>正在准备菜谱，请稍候。</p>
         </div>
-        <div v-else-if="!rStore.selectedStuff.length && !rStore.curTool && !rStore.hasReviewedSelection" class="wb-empty">
+        <div v-else-if="!rStore.onlyOwned && !rStore.selectedStuff.length && !rStore.curTool && !rStore.hasReviewedSelection" class="wb-empty">
           <h3>先选几样食材</h3><p>选食材后，相关菜谱会出现在这里；也可先选饮食目标或专题。</p><button type="button" class="wb-button" @click="example">
             加入番茄、鸡蛋和炒锅
           </button>

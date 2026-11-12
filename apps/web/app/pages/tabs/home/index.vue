@@ -3,6 +3,7 @@ import type { RecipeMatch } from '@yunyoujun/cook'
 import type { CookingStyle } from '~/composables/useCookingStyle'
 import type { RecipeItem } from '~/types'
 import { onIonViewDidEnter, onIonViewWillLeave } from '@ionic/vue'
+import { useKitchenStore } from '~/composables/store/kitchen'
 import { useCookingStyle } from '~/composables/useCookingStyle'
 import { cookDocumentHead, publicPages } from '~/constants'
 import { yunleHaptic } from '~/utils/yunleHost'
@@ -14,6 +15,7 @@ definePageMeta({
 useHead(cookDocumentHead(publicPages.home))
 
 const rStore = useRecipeStore()
+const kitchen = useKitchenStore()
 const nuxtApp = useNuxtApp()
 const { style: cookingStyle, pantry: workbenchPantry, canPersist } = useCookingStyle()
 const desktop = useMediaQuery('(min-width: 768px)')
@@ -91,6 +93,22 @@ function openDetail(recipe: RecipeItem, match?: RecipeMatch) {
       <p v-if="!canPersist" class="style-storage-note" role="status">
         浏览器暂时无法保存样式偏好，本次仍可切换使用。
       </p>
+      <section class="kitchen-filter" aria-label="厨房库存筛选">
+        <ion-toggle v-model="rStore.onlyOwned" justify="space-between">
+          仅用我的厨房库存
+        </ion-toggle>
+        <p v-if="rStore.onlyOwned && !kitchen.initialized">
+          尚未配置厨房，先添加现有食材、厨具并确认调料。
+          <NuxtLink to="/kitchen">去我的厨房</NuxtLink>
+        </p>
+        <p v-else-if="rStore.onlyOwned">
+          仅显示库存可做菜谱；不会默认有油盐。
+          <NuxtLink to="/kitchen">调整厨房库存</NuxtLink>
+        </p>
+        <p v-if="rStore.onlyOwned && rStore.excludedSelectionCount" role="status">
+          已暂时排除 {{ rStore.excludedSelectionCount }} 项非库存选择，关闭开关后恢复。
+        </p>
+      </section>
       <LazyCookingWorkbench v-if="cookingStyle === 'workbench'" v-model:pantry="workbenchPantry" :desktop="desktop" @detail="openDetail" />
       <ChooseFood v-else :desktop="desktop" :flight-target="flightTarget" />
     </ion-content>
@@ -101,6 +119,28 @@ function openDetail(recipe: RecipeItem, match?: RecipeMatch) {
 </template>
 
 <style scoped>
+.kitchen-filter {
+  margin: var(--sp-3) var(--sp-5);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--c-rule);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  color: var(--c-ink);
+}
+.kitchen-filter ion-toggle {
+  width: 100%;
+  min-height: 44px;
+}
+.kitchen-filter p {
+  margin-block: var(--sp-2) 0;
+  color: var(--c-ink-2);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+.kitchen-filter a {
+  color: var(--c-brand-ink);
+  text-decoration: underline;
+}
 .cooking-page {
   /* 平板：结果栏更窄，把宽度留给筛选区 */
   --cook-results-width: clamp(300px, 42%, 460px);

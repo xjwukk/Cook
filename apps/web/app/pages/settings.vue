@@ -40,7 +40,16 @@ async function copyExport(): Promise<void> {
 }
 
 async function applyImport(text: string): Promise<void> {
-  const result = importLocalUserData(text)
+  let result: ReturnType<typeof importLocalUserData>
+  try {
+    result = importLocalUserData(text)
+  }
+  catch (error) {
+    // 写入失败时 writeLocalUserData 会抛出明确原因，这里必须让用户看到。
+    void yunleHaptic('heavy')
+    await showAlert('导入失败', error instanceof Error ? error.message : '写入本机数据失败，请检查存储空间后重试。')
+    return
+  }
   void yunleHaptic(result ? 'success' : 'heavy')
   if (result)
     await showAlert('导入完成', `已合并到本机：现有 ${result.favorites} 个收藏、${result.histories} 条历史记录。`)

@@ -10,6 +10,7 @@ import { useIndexedDB } from '~/composables/db'
 import { usePersonalCatalog } from '~/composables/usePersonalCatalog'
 import { defaultPantry, pantryOptions } from '~/data/pantry'
 import { trackCookEvent } from '~/utils/analytics'
+import { canCookWithKitchen } from '~/utils/kitchenMatch'
 import {
   dietaryGoalOptions,
   dietaryReviewReason,
@@ -18,9 +19,11 @@ import {
   reviewedDietaryEntryAllows,
   reviewedInstitutionalEntryAllows,
 } from '~/utils/reviewed-recipes'
+import { scopedKey } from '~/utils/storageScope'
 import { db } from '../../utils/db'
 import { useAppStore } from './app'
 import { customRecipes } from './customRecipe'
+import { useKitchenStore } from './kitchen'
 
 const namespace = 'cook'
 export type SearchMode = RecommendationMode
@@ -45,14 +48,23 @@ export const useRecipeStore = defineStore('recipe', () => {
   const dietaryGoal = shallowRef<DietaryGoalID | null>(null)
   const discoveryScene = shallowRef<DiscoverySceneID | null>(null)
 
-  const selectedStuff = computed(() => uniqueStuff([...curStuff.value]))
-  const selectedPantry = computed(() => uniqueStuff(pantry.value).filter(item => pantryOptions.includes(item)))
+  const kitchen = useKitchenStore()
+  const onlyOwned = useStorage(scopedKey('cooking-only-owned'), false)
+  const allSelectedStuff = computed(() => uniqueStuff([...curStuff.value]))
+  const ownedIngredients = computed(() => new Set(uniqueStuff(kitchen.ingredients)))
+  const selectedStuff = computed(() => onlyOwned.value
+    ? allSelectedStuff.value.filter(name => ownedIngredients.value.has(name))
+    : allSelectedStuff.value)
+  const effectiveTool = computed(() => onlyOwned.value && !kitchen.tools.includes(curTool.value) ? '' : curTool.value)
+  const excludedSelectionCount = computed(() => allSelectedStuff.value.length - selectedStuff.value.length
+    + (curTool.value && !effectiveTool.value ? 1 : 0))
+  const selectedPantry = computed(() => onlyOwned.value ? kitchen.pantry : uniqueStuff(pantry.value).filter(item => pantryOptions.includes(item)))
   const selectedAvoid = computed(() => uniqueStuff(avoid.value))
   const hasReviewedSelection = computed(() => Boolean(dietaryGoal.value || discoveryScene.value))
 
   function toggleStuff(name: string) {
     const names = uniqueStuff([name])
-    const next = new Set(selectedStuff.value)
+    const next = new Set(allSelectedStuff.value)
     for (const item of names) {
       if (next.has(item))
         next.delete(item)
@@ -63,7 +75,7 @@ export const useRecipeStore = defineStore('recipe', () => {
   }
 
   function addStuff(name: string) {
-    curStuff.value = new Set(uniqueStuff([...selectedStuff.value, name]))
+    curStuff.value = new Set(uniqueStuff([...allSelectedStuff.value, name]))
   }
 
   function togglePantry(name: string) {
@@ -100,7 +112,7 @@ export const useRecipeStore = defineStore('recipe', () => {
   /** 把一句话识别出的条件合进当前筛选；忌口和「不辣」与手动勾选一样会一直保留 */
   function applyQuery(query: CookQuery) {
     const avoided = new Set(uniqueStuff(query.avoid))
-    curStuff.value = new Set(uniqueStuff([...selectedStuff.value, ...query.stuff, ...query.unknown]).filter(item => !avoided.has(item)))
+    curStuff.value = new Set(uniqueStuff([...allSelectedStuff.value, ...query.stuff, ...query.unknown]).filter(item => !avoided.has(item)))
     if (avoided.size)
       avoid.value = uniqueStuff([...selectedAvoid.value, ...avoided])
     if (query.noSpicy)
@@ -255,9 +267,8 @@ export const useRecipeStore = defineStore('recipe', () => {
 
   /** Every public recommendation outlet starts from this snapshot; private recipes never inherit public review. */
   const eligibleRecipes = computed<RecipeItem[]>(() => {
-    if (!hasReviewedSelection.value)
-      return allRecipes.value
-    return recipes.value.filter(permitsReviewedRecipe)
+    const candidates = hasReviewedSelection.value ? recipes.value.filter(permitsReviewedRecipe) : allRecipes.value
+    return onlyOwned.value ? candidates.filter(recipe => canCookWithKitchen(recipe, kitchen)) : candidates
   })
 
   const recommend = computed(() => createRecipeRecommender(eligibleRecipes.value))
@@ -265,8 +276,8 @@ export const useRecipeStore = defineStore('recipe', () => {
   function recommendWithPantry(confirmedPantry: string[]) {
     return recommend.value({
       stuff: selectedStuff.value,
-      pantry: confirmedPantry,
-      tool: curTool.value,
+      pantry: onlyOwned.value ? uniqueStuff([...kitchen.ingredients, ...kitchen.pantry]) : confirmedPantry,
+      tool: effectiveTool.value,
       keyword: keyword.value,
       mode: curMode.value,
       avoid: selectedAvoid.value,
@@ -277,12 +288,12 @@ export const useRecipeStore = defineStore('recipe', () => {
   }
   const recipeMatches = computed(() => recommendWithPantry(selectedPantry.value))
   const browseRecipes = computed(() => {
-    if (selectedStuff.value.length || (!curTool.value && !hasReviewedSelection.value))
+    if (selectedStuff.value.length || (!effectiveTool.value && !hasReviewedSelection.value && !onlyOwned.value))
       return []
     const text = keyword.value.trim()
     return eligibleRecipes.value
       .map((recipe, sourceIndex) => ({ recipe, sourceIndex }))
-      .filter(({ recipe }) => (!curTool.value || recipe.tools?.includes(curTool.value))
+      .filter(({ recipe }) => (!effectiveTool.value || recipe.tools?.includes(effectiveTool.value))
         && (!text || recipe.name.includes(text))
         && passesPreferences(recipe))
       .sort((a, b) => hasReviewedSelection.value
@@ -292,7 +303,7 @@ export const useRecipeStore = defineStore('recipe', () => {
   })
   /** 只选厨具或已审核场景、还没选食材时，都可从同一候选池列出菜谱。 */
   const toolRecipes = computed(() => !selectedStuff.value.length && curTool.value ? browseRecipes.value : [])
-  const reviewedBrowseRecipes = computed(() => !selectedStuff.value.length && hasReviewedSelection.value ? browseRecipes.value : [])
+  const reviewedBrowseRecipes = computed(() => !selectedStuff.value.length && (hasReviewedSelection.value || onlyOwned.value) ? browseRecipes.value : [])
   /** 「吃什么」随机的候选：选了食材就从匹配结果里抽，否则按厨具和忌口从全部菜谱里抽 */
   const randomPool = computed(() => {
     if (selectedStuff.value.length)
@@ -353,6 +364,9 @@ export const useRecipeStore = defineStore('recipe', () => {
 
   return {
     recipesLength,
+    onlyOwned,
+    effectiveTool,
+    excludedSelectionCount,
     keyword,
     curTool,
     curMode,

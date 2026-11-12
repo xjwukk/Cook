@@ -106,7 +106,19 @@ describe('account api', () => {
     const empty = await fetch(`${base}/api/user-data`, { headers: { Cookie: cookieA } })
     assert.deepEqual(await empty.json(), { data: null, updatedAt: 0 })
 
-    const data = { favorites: [{ id: 1, time: 1 }], histories: [] }
+    const data = {
+      favorites: [{ id: 1, time: 1 }],
+      histories: [],
+      kitchen: {
+        ingredients: [{ name: '番茄', time: 2 }],
+        ingredientRemovals: [{ name: '鸡蛋', time: 3 }],
+        tools: [{ name: '锅', time: 4 }],
+        toolRemovals: [],
+        pantry: [],
+        pantryRemovals: [{ name: '盐', time: 5 }],
+        initialized: true,
+      },
+    }
     const put = await fetch(`${base}/api/user-data`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'Cookie': cookieA },
@@ -119,6 +131,27 @@ describe('account api', () => {
 
     const readB = await (await fetch(`${base}/api/user-data`, { headers: { Cookie: cookieB } })).json()
     assert.equal(readB.data, null)
+
+    for (const kitchen of [null, {}, { ...data.kitchen, ingredients: [{ name: '番茄', time: -1 }] }]) {
+      const invalid = await fetch(`${base}/api/user-data`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Cookie': cookieA },
+        body: JSON.stringify({ data: { ...data, kitchen } }),
+      })
+      assert.equal(invalid.status, 400)
+    }
+    const unchanged = await (await fetch(`${base}/api/user-data`, { headers: { Cookie: cookieA } })).json()
+    assert.deepEqual(unchanged.data, data)
+
+    const legacy = { favorites: [{ id: 2, time: 10 }], histories: [] }
+    const legacyPut = await fetch(`${base}/api/user-data`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Cookie': cookieA },
+      body: JSON.stringify({ data: legacy }),
+    })
+    assert.equal(legacyPut.status, 200)
+    const afterLegacy = await (await fetch(`${base}/api/user-data`, { headers: { Cookie: cookieA } })).json()
+    assert.deepEqual(afterLegacy.data, { ...legacy, kitchen: data.kitchen })
   })
 
   it('requires a session for user data', async () => {

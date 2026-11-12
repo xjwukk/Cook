@@ -1,8 +1,10 @@
 import { createSharedComposable, watchDebounced } from '@vueuse/core'
 import { favoriteEntries } from '~/composables/store/favorite'
 import { recipeHistories } from '~/composables/store/history'
+import { useKitchenStore } from '~/composables/store/kitchen'
 import { readLocalUserData, writeLocalUserData } from '~/composables/store/userData'
 import { userDataMeta } from '~/composables/store/userDataMeta'
+import { storageUid } from '~/utils/storageScope'
 import {
   createEmptyUserData,
   isSameUserData,
@@ -18,17 +20,22 @@ type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error'
  */
 export const useAccountSync = createSharedComposable(() => {
   const account = useAccount()
+  const kitchen = useKitchenStore()
   const status = ref<SyncStatus>('idle')
   const lastSyncedAt = ref(0)
   const errorMessage = ref('')
   let running: Promise<void> | undefined
   let lastUploadedJson = ''
+  let pendingUpload = false
+  let uploading = false
 
   function reset(): void {
     status.value = 'idle'
     lastSyncedAt.value = 0
     errorMessage.value = ''
     lastUploadedJson = ''
+    // 登出后不得让上一个账号遗留的待传标记触发一次多余上传。
+    pendingUpload = false
   }
 
   async function readRemote(): Promise<{ data: ReturnType<typeof createEmptyUserData> | null, updatedAt: number } | null> {
@@ -50,7 +57,13 @@ export const useAccountSync = createSharedComposable(() => {
     }
   }
 
+  function isCurrentScope(): boolean {
+    return !!account.user.value && storageUid === String(account.user.value.id)
+  }
+
   async function upload(data = readLocalUserData()): Promise<boolean> {
+    if (!isCurrentScope())
+      return false
     const json = JSON.stringify(data)
     if (json === lastUploadedJson)
       return true
@@ -75,7 +88,7 @@ export const useAccountSync = createSharedComposable(() => {
 
   async function run(forceMerge?: boolean): Promise<void> {
     const user = account.user.value
-    if (!user)
+    if (!user || !isCurrentScope())
       return
     if (running)
       return running
@@ -84,6 +97,8 @@ export const useAccountSync = createSharedComposable(() => {
     errorMessage.value = ''
     running = (async () => {
       const remote = await readRemote()
+      if (!isCurrentScope() || account.user.value?.id !== user.id)
+        return
       if (!remote) {
         status.value = 'error'
         return
@@ -111,8 +126,13 @@ export const useAccountSync = createSharedComposable(() => {
         lastSyncedAt.value = Date.now()
       }
       status.value = 'synced'
-    })().finally(() => {
+    })().catch((error) => {
+      errorMessage.value = error instanceof Error ? error.message : '同步失败'
+      status.value = 'error'
+    }).finally(() => {
       running = undefined
+      if (pendingUpload)
+        void flushUploads()
     })
 
     return running
@@ -120,15 +140,48 @@ export const useAccountSync = createSharedComposable(() => {
 
   const syncNow = () => run(true)
 
+  async function flushUploads(): Promise<void> {
+    if (running || uploading || !isCurrentScope())
+      return
+    uploading = true
+    let succeeded = false
+    try {
+      while (pendingUpload && isCurrentScope()) {
+        pendingUpload = false
+        status.value = 'syncing'
+        const snapshot = readLocalUserData()
+        const ok = await upload(snapshot)
+        if (!ok) {
+          status.value = 'error'
+          break
+        }
+        succeeded = true
+        // A slow PUT must not swallow edits made while its snapshot was in flight.
+        pendingUpload ||= !isSameUserData(snapshot, readLocalUserData())
+        status.value = 'synced'
+      }
+    }
+    catch (error) {
+      errorMessage.value = error instanceof Error ? error.message : '同步失败'
+      status.value = 'error'
+    }
+    finally {
+      uploading = false
+      // A watcher may have set pendingUpload while the last upload was in flight,
+      // and its flushUploads() call was skipped because uploading was still true.
+      // Only retry after a successful upload, so a failing network cannot loop.
+      if (succeeded && pendingUpload && !running && isCurrentScope())
+        void flushUploads()
+    }
+  }
+
   watchDebounced(
-    [favoriteEntries, recipeHistories, userDataMeta],
+    [favoriteEntries, recipeHistories, userDataMeta, () => kitchen.data],
     () => {
-      if (!account.isAuthenticated.value || status.value === 'syncing')
+      if (!account.isAuthenticated.value || !isCurrentScope())
         return
-      status.value = 'syncing'
-      void upload().then((ok) => {
-        status.value = ok ? 'synced' : 'error'
-      })
+      pendingUpload = true
+      void flushUploads()
     },
     { debounce: 1500, deep: true },
   )

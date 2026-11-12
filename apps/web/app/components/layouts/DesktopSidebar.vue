@@ -11,7 +11,8 @@ const navigation = computed(() => getPrimaryNavigation(path.value))
 const kitchen = [
   { label: '我的收藏', href: '/recipes/favorites', icon: ioniconsStarOutline, activeIcon: ioniconsStar },
   { label: '历史记录', href: '/recipes/history', icon: ioniconsTimeOutline, activeIcon: ioniconsTime },
-  { label: '食材和厨具', href: '/catalog', icon: ioniconsGridOutline, activeIcon: ioniconsGrid },
+  { label: '我的厨房', href: '/kitchen', icon: ioniconsBasketOutline, activeIcon: ioniconsBasket },
+  { label: '条目管理', href: '/catalog', icon: ioniconsGridOutline, activeIcon: ioniconsGrid },
 ]
 
 function navigate(event: MouseEvent, href: string) {

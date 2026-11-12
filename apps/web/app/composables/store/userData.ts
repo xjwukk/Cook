@@ -1,4 +1,6 @@
 import type { UserData, UserDataExportFile } from '~/utils/userData'
+import { normalizeKitchen } from '~/utils/kitchen'
+import { scopedKey } from '~/utils/storageScope'
 import {
   createEmptyUserData,
   createUserDataExport,
@@ -7,11 +9,13 @@ import {
 } from '~/utils/userData'
 import { favoriteEntries, setFavoriteEntries } from './favorite'
 import { recipeHistories } from './history'
+import { useKitchenStore } from './kitchen'
 import { userDataMeta } from './userDataMeta'
 
 export function readLocalUserData(): UserData {
   const meta = userDataMeta.value
   return {
+    kitchen: useKitchenStore().data,
     favorites: favoriteEntries.value,
     favoriteRemovals: meta.favoriteRemovals ?? [],
     histories: recipeHistories.value,
@@ -21,14 +25,57 @@ export function readLocalUserData(): UserData {
 }
 
 export function writeLocalUserData(data: UserData): void {
-  setFavoriteEntries(data.favorites)
-  recipeHistories.value = data.histories
-  userDataMeta.value = {
+  const kitchen = normalizeKitchen(data.kitchen)
+  const meta = {
     ...userDataMeta.value,
     favoriteRemovals: data.favoriteRemovals,
     historyRemovals: data.historyRemovals,
     historyClearedAt: data.historyClearedAt,
   }
+  // Serialize everything before writing; VueUse persistence is asynchronous and
+  // catches quota errors, so it cannot serve as the import transaction boundary.
+  const writes = [
+    [scopedKey('kitchen'), JSON.stringify(kitchen)],
+    [scopedKey('favorites'), JSON.stringify(data.favorites)],
+    [scopedKey('history'), JSON.stringify(data.histories)],
+    [scopedKey('sync'), JSON.stringify(meta)],
+  ] as const
+  const previous = writes.map(([key]) => localStorage.getItem(key))
+  let written = 0
+  try {
+    for (const [key, value] of writes) {
+      localStorage.setItem(key, value)
+      written++
+    }
+  }
+  catch (error) {
+    // Restore only successful writes; setItem itself is atomic on failure.
+    let rollbackFailed = false
+    for (let index = written - 1; index >= 0; index--) {
+      const entry = writes[index]
+      const old = previous[index]
+      if (!entry || old === undefined)
+        continue
+      const [key] = entry
+      try {
+        if (old === null)
+          localStorage.removeItem(key)
+        else
+          localStorage.setItem(key, old)
+      }
+      catch {
+        rollbackFailed = true
+      }
+    }
+    if (rollbackFailed)
+      throw new Error('导入失败，部分本地数据无法恢复，请检查存储空间后重新导入', { cause: error })
+    throw error
+  }
+  // No reactive state changes until every persistent write has succeeded.
+  useKitchenStore().replaceData(kitchen, false)
+  setFavoriteEntries(data.favorites)
+  recipeHistories.value = data.histories
+  userDataMeta.value = meta
 }
 
 export function exportLocalUserData(now = Date.now()): UserDataExportFile {

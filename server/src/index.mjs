@@ -14,6 +14,7 @@ import {
   createUserRepository,
   openDatabase,
 } from './db.mjs'
+import { isValidUserData } from './user-data.mjs'
 
 const PORT = Number(process.env.PORT || 8787)
 const HOST = process.env.HOST || '127.0.0.1'
@@ -369,11 +370,19 @@ const routes = [
       return
     }
     const body = await readJson(req)
-    if (!body.data || typeof body.data !== 'object' || Array.isArray(body.data)) {
+    if (!isValidUserData(body.data)) {
       sendJson(res, 400, { error: '数据格式不正确' })
       return
     }
-    const saved = userData.put(user.id, body.data)
+    // Old v1 clients do not know the kitchen extension. Their full-document
+    // upload must not erase inventory or its permanent deletion tombstones.
+    const data = body.data
+    if (data.kitchen === undefined) {
+      const previousKitchen = userData.get(user.id)?.data?.kitchen
+      if (previousKitchen !== undefined)
+        data.kitchen = previousKitchen
+    }
+    const saved = userData.put(user.id, data)
     sendJson(res, 200, saved)
   }],
 ]

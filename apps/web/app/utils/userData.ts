@@ -1,4 +1,6 @@
+import type { KitchenData } from './kitchen'
 import type { RecipeItem } from '~/types'
+import { createEmptyKitchen, mergeKitchen, normalizeKitchen } from './kitchen'
 
 /**
  * Favorites and browsing history, plus the tombstones needed to sync deletions.
@@ -19,6 +21,7 @@ export interface HistoryEntry { recipe: RecipeItem, time: number }
 export interface HistoryRemoval { name: string, time: number }
 
 export interface UserData {
+  kitchen: KitchenData
   favorites: FavoriteEntry[]
   favoriteRemovals: FavoriteRemoval[]
   histories: HistoryEntry[]
@@ -35,6 +38,7 @@ export interface UserDataExportFile extends UserData {
 
 export function createEmptyUserData(): UserData {
   return {
+    kitchen: createEmptyKitchen(),
     favorites: [],
     favoriteRemovals: [],
     histories: [],
@@ -56,7 +60,7 @@ export function mergeUserData(a: UserData, b: UserData, now = Date.now()): UserD
     historyClearedAt,
     now,
   )
-  return { favorites, favoriteRemovals, histories, historyRemovals, historyClearedAt }
+  return { kitchen: mergeKitchen(a.kitchen, b.kitchen), favorites, favoriteRemovals, histories, historyRemovals, historyClearedAt }
 }
 
 export function isSameUserData(a: UserData, b: UserData): boolean {
@@ -172,6 +176,7 @@ function pruneTombstones<T extends { time: number }>(list: T[], now: number, bre
 
 function toPlain(data: UserData): UserData {
   return {
+    kitchen: normalizeKitchen(data.kitchen),
     favorites: data.favorites.map(({ id, time }) => ({ id, time })),
     favoriteRemovals: data.favoriteRemovals.map(({ id, time }) => ({ id, time })),
     histories: data.histories.map(({ recipe, time }) => ({ recipe, time })),
@@ -191,6 +196,7 @@ export function normalizeUserData(value: unknown): UserData | null {
     return null
 
   return {
+    kitchen: normalizeKitchen(value.kitchen),
     favorites: readList(value.favorites, readFavorite),
     favoriteRemovals: readList(value.favoriteRemovals, readFavorite),
     histories: readList(value.histories, readHistory),

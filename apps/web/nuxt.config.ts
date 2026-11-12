@@ -83,6 +83,8 @@ export default defineNuxtConfig({
         ...seoHead.link,
         { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
         { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
+        // 霞鹜文楷：站点自托管，避免依赖访客本机是否安装该字体
+        { rel: 'stylesheet', href: '/fonts/lxgw-wenkai/style.css' },
       ],
       meta: [
         { name: 'viewport', content: 'width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=no, viewport-fit=cover' },
@@ -163,7 +165,7 @@ export default defineNuxtConfig({
     },
     prerender: {
       crawlLinks: false,
-      routes: ['/', '/home', '/library', '/apps', '/my', '/catalog', '/recipes/favorites', '/recipes/history', '/recipes/mine', '/recipes/new', '/account', '/random', '/404', '/settings'],
+      routes: ['/', '/home', '/library', '/apps', '/my', '/catalog', '/kitchen', '/recipes/favorites', '/recipes/history', '/recipes/mine', '/recipes/new', '/account', '/random', '/404', '/settings'],
       ignore: ['/hi'],
     },
   },

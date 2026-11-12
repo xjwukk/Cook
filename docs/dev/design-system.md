@@ -19,8 +19,8 @@
 1. **目的**：让用户三秒内知道「我家这些菜能做什么」，并把注意力留在食材与结果之间，而不是界面装饰。
 2. **受众**：重复使用的家庭做饭者，扫读优先；已选食材和结果条目必须一眼可辨。
 3. **调性**：温暖编辑式。暖白纸感底、墨色正文、陶土橙主操作，靠细墨线与留白分区，不用卡片描边堆叠。
-4. **记忆点**：**一本摊开的食谱册**。纸张暖白底 + 陶土橙的「印章」式已选态 + 衬线数字计数 + 食材 emoji 装在统一圆形纸章容器里。
-5. **约束**：Nuxt 4 CSR / Ionic 组件 / UnoCSS(Wind3+attributify) / SCSS 令牌；不得新增运行时依赖（不引中文衬线 webfont）；明暗双主题；Web 与原生端共用品牌色与图标，但原生端保留各自平台惯例。
+4. **记忆点**：**一本摊开的食谱册**。纸张暖白底 + 陶土橙的「印章」式已选态 + 霞鹜文楷数字计数 + 食材 emoji 装在统一圆形纸章容器里。
+5. **约束**：Nuxt 4 CSR / Ionic 组件 / UnoCSS(Wind3+attributify) / SCSS 令牌；字体资源站点自托管，不新增运行时 npm 依赖；明暗双主题；Web 与原生端共用品牌色与图标，但原生端保留各自平台惯例。
 
 ## 目标视口与三端断点
 
@@ -76,8 +76,8 @@ Ionic 把 `--ion-color-primary` 同时用于填充与文字。因此：
 
 ### 排版
 
-- `--font-sans`：系统中文黑体栈（`-apple-system` / `PingFang SC` / `Microsoft YaHei` / `Noto Sans CJK SC`）。
-- `--font-display`：拉丁衬线栈（`Iowan Old Style` / `Palatino` / `Georgia`），**只用于拉丁字母与数字**——计数、序号、字标。中文字形不受影响，因此无需下载中文 serif 字体。
+- `--font-sans`：霞鹜文楷（`'LXGW WenKai'`），站点自托管于 `apps/web/public/fonts/lxgw-wenkai/`，按 unicode-range 分片，仅下载页面实际用到的切片；其后依次回退系统中文黑体栈（`-apple-system` / `PingFang SC` / `Microsoft YaHei` / `Noto Sans CJK SC`）。全局生效：`html`、Ionic `--ion-font-family` 均指向该令牌。
+- `--font-display`：与 `--font-sans` 同源，标题、计数、序号与字标统一使用霞鹜文楷。
 - 字号阶：`--fs-2xs 11 / xs 12 / sm 13 / base 15 / md 17 / lg 20 / xl 24 / 2xl 30 / 3xl 38`。
 - 行高：CJK 正文不低于 1.6，标题 1.25。
 - 字重对比：标题 600，正文 400，弱化文字 400 + 降色（不靠降字号制造层次）。

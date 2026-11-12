@@ -1,11 +1,15 @@
 <script lang="ts" setup>
 import type { IonSearchbarCustomEvent, SearchbarInputEventDetail } from '@ionic/core'
 import type { DbRecipeItem } from '~/utils/db'
+import { useStorage } from '@vueuse/core'
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useIndexedDB } from '~/composables/db'
 import { favoriteRecipeIds } from '~/composables/store/favorite'
+import { useKitchenStore } from '~/composables/store/kitchen'
 import { cookDocumentHead, publicPages } from '~/constants'
 import { db } from '~/utils/db'
+import { canCookWithKitchen } from '~/utils/kitchenMatch'
+import { scopedKey } from '~/utils/storageScope'
 import { yunleHaptic } from '~/utils/yunleHost'
 
 definePageMeta({
@@ -15,6 +19,8 @@ definePageMeta({
 useHead(cookDocumentHead(publicPages.library))
 
 const keyword = ref('')
+const kitchen = useKitchenStore()
+const onlyOwned = useStorage(scopedKey('library-only-owned'), false)
 const loading = ref(true)
 const recipes = shallowRef<DbRecipeItem[]>([])
 const view = ref<'all' | 'fav'>('all')
@@ -24,7 +30,8 @@ const isFav = (r: DbRecipeItem) => r.id != null && favoriteIdSet.value.has(r.id)
 
 const filtered = computed(() => {
   const text = keyword.value.trim()
-  return text ? recipes.value.filter(r => r.name.includes(text)) : recipes.value
+  const eligible = onlyOwned.value ? recipes.value.filter(recipe => canCookWithKitchen(recipe, kitchen)) : recipes.value
+  return text ? eligible.filter(r => r.name.includes(text)) : eligible
 })
 const displayed = computed(() => view.value === 'fav' ? filtered.value.filter(isFav) : filtered.value)
 const favCount = computed(() => recipes.value.filter(isFav).length)
@@ -139,6 +146,15 @@ onBeforeUnmount(() => cancelIdle(idleHandle))
         </ion-toolbar>
       </ion-header>
 
+      <section class="library-kitchen-filter" aria-label="厨房库存筛选">
+        <ion-toggle v-model="onlyOwned" justify="space-between">
+          仅看我的厨房可做
+        </ion-toggle>
+        <p v-if="onlyOwned">
+          {{ kitchen.initialized ? '按已记录的食材、厨具和调料筛选，不默认有油盐。' : '尚未配置厨房，请先添加现有食材、厨具并确认调料。' }}
+          <NuxtLink to="/kitchen">去我的厨房</NuxtLink>
+        </p>
+      </section>
       <ion-list v-if="loading" aria-busy="true" aria-label="正在加载菜谱">
         <ion-item v-for="i in 12" :key="i">
           <ion-label>
@@ -166,8 +182,8 @@ onBeforeUnmount(() => cancelIdle(idleHandle))
 
       <div v-else class="cook-empty">
         <ion-icon :icon="view === 'fav' && !keyword ? ioniconsStarOutline : ioniconsSearchOutline" />
-        <h3>{{ keyword ? '没有找到相关菜谱' : '还没有收藏的菜谱' }}</h3>
-        <p>{{ keyword ? '换个关键词试试' : '左滑菜谱或点星标即可收藏' }}</p>
+        <h3>{{ onlyOwned ? '暂无库存可做的菜谱' : keyword ? '没有找到相关菜谱' : '还没有收藏的菜谱' }}</h3>
+        <p>{{ onlyOwned ? '调整厨房库存、取消其他筛选或关闭库存筛选试试' : keyword ? '换个关键词试试' : '左滑菜谱或点星标即可收藏' }}</p>
       </div>
     </ion-content>
     <ion-toast
@@ -181,6 +197,28 @@ onBeforeUnmount(() => cancelIdle(idleHandle))
 </template>
 
 <style scoped>
+.library-kitchen-filter {
+  margin: var(--sp-3) var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--c-rule);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  color: var(--c-ink);
+}
+.library-kitchen-filter ion-toggle {
+  width: 100%;
+  min-height: 44px;
+}
+.library-kitchen-filter p {
+  margin-block: var(--sp-2) 0;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--c-ink-2);
+}
+.library-kitchen-filter a {
+  color: var(--c-brand-ink);
+  text-decoration: underline;
+}
 .library-segment {
   --padding-bottom: 8px;
 }
