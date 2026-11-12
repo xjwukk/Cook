@@ -12,9 +12,9 @@ useHead({
 
 <template>
   <YlfIconButton
-    class="icon-btn hover:text-yellow-400 !outline-none"
+    label="切换深色模式"
     text-xl
-    title="切换" @click="toggleDark()"
+    @click="toggleDark()"
   >
     <div i="ri-sun-line dark:ri-moon-line" />
   </YlfIconButton>

@@ -53,10 +53,11 @@ defineProps<{
 }
 .ingredient-chip:hover:not([aria-pressed='true']) {
   border-color: var(--c-rule-strong);
+  background: var(--c-surface);
   color: var(--c-ink);
 }
 .ingredient-chip:active {
-  transform: scale(0.96);
+  transform: scale(var(--cook-btn-press-scale));
 }
 /* 印章：选中即陶土橙实底 */
 .ingredient-chip[aria-pressed='true'] {
@@ -91,12 +92,13 @@ defineProps<{
   height: 20px;
 }
 .ingredient-chip:focus-visible {
-  outline: 2px solid var(--c-brand);
-  outline-offset: 2px;
+  outline: var(--cook-btn-focus-width) solid var(--c-brand);
+  outline-offset: var(--cook-btn-focus-offset);
 }
 .ingredient-chip:disabled {
-  opacity: 0.45;
+  opacity: var(--cook-btn-disabled-opacity);
   cursor: not-allowed;
+  transform: none;
 }
 @keyframes ingredient-chip-pop {
   0% {

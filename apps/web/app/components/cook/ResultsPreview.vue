@@ -109,6 +109,7 @@ defineEmits<{ toggle: [], adjust: [], example: [], retry: [] }>()
   background: transparent;
   cursor: pointer;
 }
+/* 主操作：印章。按下有下沉与缩放，与其它按钮同一套手感 */
 .results-preview-action {
   display: inline-flex;
   align-items: center;
@@ -117,25 +118,64 @@ defineEmits<{ toggle: [], adjust: [], example: [], retry: [] }>()
   flex: none;
   min-height: 44px;
   border: 0;
-  border-radius: 22px;
-  padding: 0 14px;
+  border-radius: var(--r-pill);
+  padding: 0 16px;
   background: var(--c-brand);
+  box-shadow: var(--shadow-1);
   color: var(--c-brand-contrast);
-  font-size: 14px;
+  font-family: inherit;
+  font-size: var(--fs-base);
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
+  transition:
+    background-color var(--dur-base) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
 }
+.results-preview-action:hover {
+  background: var(--c-brand-ink);
+}
+.results-preview-action:active {
+  transform: scale(var(--cook-btn-press-scale));
+  box-shadow: none;
+}
+.results-preview-action:focus-visible {
+  outline: var(--cook-btn-focus-width) solid var(--c-brand);
+  outline-offset: var(--cook-btn-focus-offset);
+}
+/* 次操作：纸面上的墨线按钮，悬停才显出底 */
 .results-preview-example {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
   min-height: 44px;
-  border: 0;
-  border-radius: 22px;
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
   padding: 0 12px;
-  background: var(--cook-fill);
-  color: var(--ion-color-primary);
-  font-size: 12px;
+  background: transparent;
+  color: var(--c-ink-2);
+  font-family: inherit;
+  font-size: var(--fs-sm);
   cursor: pointer;
+  transition:
+    background-color var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out),
+    color var(--dur-base) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+.results-preview-example:hover {
+  border-color: var(--c-rule);
+  background: var(--c-surface);
+  color: var(--c-ink);
+}
+.results-preview-example:active {
+  transform: scale(var(--cook-btn-press-scale));
+}
+.results-preview-example:focus-visible {
+  outline: var(--cook-btn-focus-width) solid var(--c-brand);
+  outline-offset: var(--cook-btn-focus-offset);
 }
 .results-preview-chevron {
   font-size: 20px;
@@ -181,7 +221,7 @@ defineEmits<{ toggle: [], adjust: [], example: [], retry: [] }>()
 .is-docked .results-preview-example,
 .is-docked .results-preview-action {
   min-height: 30px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   padding-inline: 9px;
   font-size: 12px;
 }

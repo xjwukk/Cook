@@ -110,6 +110,7 @@ export default defineNuxtConfig({
     '~/styles/index.scss',
     '@ionic/vue/css/palettes/dark.class.css',
     '~/styles/ionic.css',
+    '~/styles/buttons.scss',
   ],
 
   router: {

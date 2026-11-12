@@ -1,0 +1,190 @@
+/* 按钮基础层 —— 高频按钮的统一外观与交互。
+ *
+ * 设计方向见 docs/decisions/0019-warm-editorial-web-visual-direction.md，
+ * 规范见 docs/dev/design-system.md。
+ *
+ * 原则：主按钮是盖下去的印章，次级是纸面上的墨线按钮；
+ * 按下时有 1px 下沉与轻微缩放；整页只应有一处主按钮。
+ */
+
+.cook-btn {
+  --cook-btn-bg: transparent;
+  --cook-btn-color: var(--c-ink);
+  --cook-btn-border: transparent;
+  --cook-btn-shadow: none;
+
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--cook-btn-height);
+  padding: 0 var(--cook-btn-padding-inline);
+  border: 1px solid var(--cook-btn-border);
+  border-radius: var(--cook-btn-radius);
+  background: var(--cook-btn-bg);
+  box-shadow: var(--cook-btn-shadow);
+  color: var(--cook-btn-color);
+  font-family: inherit;
+  font-size: var(--cook-btn-font);
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out),
+    color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+/* ---- 变体 ---- */
+
+/* 印章：每屏至多一个 */
+.cook-btn--primary {
+  --cook-btn-bg: var(--c-brand);
+  --cook-btn-color: var(--c-brand-contrast);
+  --cook-btn-shadow: var(--shadow-1);
+}
+.cook-btn--primary:hover {
+  --cook-btn-bg: var(--c-brand-ink);
+}
+
+/* 次级：纸白底 + 墨线 */
+.cook-btn--secondary {
+  --cook-btn-bg: var(--c-surface);
+  --cook-btn-border: var(--c-rule);
+  --cook-btn-color: var(--c-ink);
+}
+.cook-btn--secondary:hover {
+  --cook-btn-border: var(--c-rule-strong);
+  --cook-btn-bg: var(--c-paper-alt);
+}
+
+/* 工具型：悬停才显出纸面 */
+.cook-btn--ghost {
+  --cook-btn-color: var(--c-ink-2);
+}
+.cook-btn--ghost:hover {
+  --cook-btn-bg: var(--c-paper-alt);
+  --cook-btn-color: var(--c-ink);
+}
+
+/* 危险：砖红 */
+.cook-btn--danger {
+  --cook-btn-bg: transparent;
+  --cook-btn-border: color-mix(in srgb, var(--c-alert) 42%, transparent);
+  --cook-btn-color: var(--c-alert);
+}
+.cook-btn--danger:hover {
+  --cook-btn-bg: color-mix(in srgb, var(--c-alert) 12%, transparent);
+  --cook-btn-border: var(--c-alert);
+}
+
+/* 安静：纯文字链接 */
+.cook-btn--quiet {
+  --cook-btn-bg: transparent;
+  --cook-btn-color: var(--c-ink-2);
+  min-height: 36px;
+  padding-inline: 6px;
+  text-decoration: underline;
+  text-underline-offset: 0.22em;
+  text-decoration-color: var(--c-rule-strong);
+}
+.cook-btn--quiet:hover {
+  --cook-btn-color: var(--c-ink);
+  text-decoration-color: currentcolor;
+}
+
+/* ---- 尺寸 ---- */
+
+.cook-btn--sm {
+  min-height: var(--cook-btn-height-sm);
+  padding-inline: 14px;
+  font-size: var(--fs-sm);
+}
+
+.cook-btn--xs {
+  min-height: var(--cook-btn-height-xs);
+  padding-inline: 10px;
+  font-size: var(--fs-xs);
+  font-weight: 400;
+}
+
+.cook-btn--pill {
+  border-radius: var(--cook-btn-radius-pill);
+}
+
+.cook-btn--block {
+  display: flex;
+  width: 100%;
+}
+
+/* ---- 交互状态 ---- */
+
+.cook-btn:hover {
+  text-decoration: none;
+}
+
+/* 按下：印章压下去 */
+.cook-btn:active:not(:disabled) {
+  transform: scale(var(--cook-btn-press-scale));
+  box-shadow: none;
+}
+
+/* 焦点：所有按钮一致，键盘可见 */
+.cook-btn:focus-visible {
+  outline: var(--cook-btn-focus-width) solid var(--c-brand);
+  outline-offset: var(--cook-btn-focus-offset);
+}
+
+/* 禁用：降透明并停掉按压反馈 */
+.cook-btn:disabled,
+.cook-btn[aria-disabled='true'] {
+  opacity: var(--cook-btn-disabled-opacity);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* 加载：文字保留但降透明，图标由调用方替换为 ion-spinner */
+.cook-btn[aria-busy='true'] {
+  pointer-events: none;
+}
+.cook-btn[aria-busy='true'] > .cook-btn__label {
+  opacity: 0.7;
+}
+
+.cook-btn__spinner {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+/* 触摸设备：主次按钮给足命中高度 */
+@media (pointer: coarse) {
+  .cook-btn {
+    min-height: 48px;
+  }
+  .cook-btn--xs {
+    min-height: 36px;
+  }
+  .cook-btn--quiet {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cook-btn {
+    transition:
+      background-color var(--dur-fast) linear,
+      border-color var(--dur-fast) linear,
+      color var(--dur-fast) linear;
+  }
+  .cook-btn:active:not(:disabled) {
+    transform: none;
+  }
+}

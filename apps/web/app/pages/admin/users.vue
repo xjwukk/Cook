@@ -127,12 +127,19 @@ async function resetPassword(item: AdminUser): Promise<void> {
               </template>
             </p>
           </ion-label>
-          <ion-button slot="end" fill="clear" size="small" @click="resetPassword(item)">
-            重置密码
-          </ion-button>
-          <ion-button slot="end" fill="clear" size="small" color="danger" :disabled="item.id === user?.id" @click="removeUser(item)">
-            删除
-          </ion-button>
+          <div slot="end" class="admin-row-actions">
+            <button type="button" class="cook-btn cook-btn--quiet cook-btn--xs" @click="resetPassword(item)">
+              重置密码
+            </button>
+            <button
+              type="button"
+              class="cook-btn cook-btn--quiet cook-btn--xs admin-row-danger"
+              :disabled="item.id === user?.id"
+              @click="removeUser(item)"
+            >
+              删除
+            </button>
+          </div>
         </ion-item>
       </ion-list>
 
@@ -156,6 +163,21 @@ async function resetPassword(item: AdminUser): Promise<void> {
   margin-inline-start: 6px;
   color: var(--c-brand-ink);
   font-size: var(--fs-xs);
+}
+/* 行内操作：主操作文字化，危险操作只靠颜色区分，不做实心按钮 */
+.admin-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+.admin-row-danger {
+  color: var(--c-alert);
+  text-decoration-color: color-mix(in srgb, var(--c-alert) 40%, transparent);
+}
+.admin-row-danger:hover {
+  color: var(--c-alert);
+  text-decoration-color: currentcolor;
 }
 .admin-footnote {
   margin: 8px 24px 48px;

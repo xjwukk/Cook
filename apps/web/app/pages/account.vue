@@ -154,18 +154,30 @@ const isAdmin = computed(() => user.value?.role === 'admin')
             <p v-else-if="passwordMessage" class="account-success" role="status">
               {{ passwordMessage }}
             </p>
-            <ion-button expand="block" fill="outline" type="submit" :disabled="changingPassword">
-              {{ changingPassword ? '正在保存…' : '更新密码' }}
-            </ion-button>
+            <button
+              type="submit"
+              class="cook-btn cook-btn--secondary cook-btn--block"
+              :aria-busy="changingPassword"
+              :disabled="changingPassword"
+            >
+              <ion-spinner v-if="changingPassword" class="cook-btn__spinner" name="crescent" />
+              <span class="cook-btn__label">更新密码</span>
+            </button>
           </form>
 
-          <NuxtLink v-if="isAdmin" class="account-admin-link" to="/admin/users">
-            用户管理
-          </NuxtLink>
-
-          <ion-button class="account-signout" expand="block" fill="outline" color="danger" :disabled="submitting" @click="signOut">
-            退出登录
-          </ion-button>
+          <div class="account-actions">
+            <NuxtLink v-if="isAdmin" class="cook-btn cook-btn--quiet" to="/admin/users">
+              用户管理
+            </NuxtLink>
+            <button
+              type="button"
+              class="cook-btn cook-btn--danger"
+              :disabled="submitting"
+              @click="signOut"
+            >
+              退出登录
+            </button>
+          </div>
         </template>
 
         <template v-else>
@@ -176,11 +188,21 @@ const isAdmin = computed(() => user.value?.role === 'admin')
             {{ mode === 'login' ? '登录后收藏和历史可在多台设备间同步' : '账号保存在你自己的服务器上' }}
           </p>
 
-          <div class="account-tabs" role="tablist" aria-label="登录或注册">
-            <button type="button" role="tab" :aria-selected="mode === 'login'" @click="switchMode('login')">
+          <div class="account-tabs" role="tablist" aria-label="登录或注册" :data-mode="mode">
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="mode === 'login'"
+              @click="switchMode('login')"
+            >
               登录
             </button>
-            <button type="button" role="tab" :aria-selected="mode === 'register'" @click="switchMode('register')">
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="mode === 'register'"
+              @click="switchMode('register')"
+            >
               注册
             </button>
           </div>
@@ -222,9 +244,15 @@ const isAdmin = computed(() => user.value?.role === 'admin')
               {{ localError || errorMessage }}
             </p>
 
-            <ion-button expand="block" type="submit" :disabled="submitting">
-              {{ submitting ? '请稍候…' : mode === 'login' ? '登录' : '注册并登录' }}
-            </ion-button>
+            <button
+              type="submit"
+              class="cook-btn cook-btn--primary cook-btn--block"
+              :aria-busy="submitting"
+              :disabled="submitting"
+            >
+              <ion-spinner v-if="submitting" class="cook-btn__spinner" name="crescent" />
+              <span class="cook-btn__label">{{ mode === 'login' ? '登录' : '注册并登录' }}</span>
+            </button>
           </form>
 
           <p class="account-hint">
@@ -253,30 +281,52 @@ const isAdmin = computed(() => user.value?.role === 'admin')
   color: var(--c-ink-2);
   font-size: var(--fs-base);
 }
+/* 分段控件：滑动指示条在两段之间移动 */
 .account-tabs {
-  display: inline-flex;
-  gap: 4px;
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   margin-bottom: 20px;
   padding: 4px;
   border: 1px solid var(--c-rule);
   border-radius: var(--r-pill);
   background: var(--c-paper-alt);
 }
-.account-tabs button {
-  min-height: 40px;
-  padding: 0 22px;
-  border: 0;
+.account-tabs::before {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc(50% - 4px);
   border-radius: var(--r-pill);
+  background: var(--c-surface);
+  box-shadow: var(--shadow-1);
+  content: '';
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.account-tabs[data-mode='register']::before {
+  transform: translateX(100%);
+}
+.account-tabs button {
+  position: relative;
+  min-height: 40px;
+  padding: 0;
+  border: 0;
   background: transparent;
   color: var(--c-ink-2);
+  font-family: inherit;
   font-size: var(--fs-base);
   cursor: pointer;
+  transition: color var(--dur-base) var(--ease-out);
 }
 .account-tabs button[aria-selected='true'] {
-  background: var(--c-surface);
   color: var(--c-ink);
   font-weight: 600;
-  box-shadow: var(--shadow-1);
+}
+.account-tabs button:focus-visible {
+  outline: var(--cook-btn-focus-width) solid var(--c-brand);
+  outline-offset: var(--cook-btn-focus-offset);
+  border-radius: var(--r-pill);
 }
 .account-form {
   display: flex;
@@ -325,17 +375,13 @@ const isAdmin = computed(() => user.value?.role === 'admin')
   padding-top: 22px;
   border-top: 1px solid var(--c-rule);
 }
-.account-admin-link {
-  display: inline-flex;
+/* 次要操作并排一行，且都降权：危险操作不与主操作争视线 */
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  min-height: 44px;
-  margin-top: 12px;
-  color: var(--c-brand-ink);
-  font-size: var(--fs-base);
-  text-decoration: underline;
-  text-underline-offset: 0.2em;
-}
-.account-signout {
+  justify-content: space-between;
+  gap: 12px;
   margin-top: 20px;
 }
 .account-hint {

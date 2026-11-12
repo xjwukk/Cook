@@ -8,6 +8,7 @@ function back() {
 <template>
   <YlfIconButton
     icon="i-ri-arrow-left-s-line"
+    label="返回"
     @click="back"
   />
 </template>

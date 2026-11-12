@@ -25,10 +25,10 @@ const filteredRecipes = computedAsync(async () => {
 
 <template>
   <YlfIconButton
-
-    class="icon-btn hover:text-yellow-400 !outline-none"
-    absolute right-4 top-4 text-xl
-    title="切换" @click="openModal"
+    class="absolute right-4 top-4"
+    label="搜索菜谱"
+    text-xl
+    @click="openModal"
   >
     <div i="ri-search-line" />
   </YlfIconButton>
