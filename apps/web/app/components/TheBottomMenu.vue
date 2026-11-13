@@ -13,8 +13,8 @@ const items: BottomMenuItem[] = [
   {
     icon: 'i-ri-compass-2-line',
     activeIcon: 'i-ri-compass-2-fill',
-    title: '吃什么',
-    to: '/random',
+    title: '助手',
+    to: '/assistant',
   },
   // {
   //   icon: 'i-ri-compass-2-line',
@@ -25,14 +25,14 @@ const items: BottomMenuItem[] = [
   {
     icon: 'i-ri-question-line',
     activeIcon: 'i-ri-question-fill',
-    title: '帮助',
-    to: '/help',
+    title: '菜谱',
+    to: '/library',
   },
   {
     icon: 'i-ri-user-line',
     activeIcon: 'i-ri-user-fill',
     title: '我的',
-    to: '/user',
+    to: '/my',
   },
 ]
 

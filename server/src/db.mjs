@@ -37,6 +37,15 @@ export function openDatabase(file) {
       data TEXT NOT NULL,
       updated_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS ai_usage (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      day TEXT NOT NULL,
+      day_count INTEGER NOT NULL DEFAULT 0,
+      minute TEXT NOT NULL,
+      minute_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, day)
+    );
   `)
 
   // 旧库升级：users 表没有 role 列时补上，已有账号默认是普通用户。
@@ -123,6 +132,45 @@ export function createUserDataRepository(db) {
         ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at
       `).run(userId, JSON.stringify(data), now)
       return { data, updatedAt: now }
+    },
+  }
+}
+
+/**
+ * 助手用量配额：按账号记当日与当日每分钟计数。
+ * 放在库里而不是内存里，进程重启后额度不会重置。
+ */
+export function createAiUsageRepository(db) {
+  const dayKey = now => new Date(now).toISOString().slice(0, 10)
+  const minuteKey = now => new Date(now).toISOString().slice(0, 16)
+
+  return {
+    /** 读取当前额度余量，不计数 */
+    peek(userId, now = Date.now()) {
+      const row = db.prepare('SELECT day_count AS dayCount, minute_count AS minuteCount FROM ai_usage WHERE user_id = ? AND day = ?')
+        .get(userId, dayKey(now))
+      return { dayCount: row?.dayCount ?? 0, minuteCount: row?.minuteCount ?? 0 }
+    },
+    /** 记一次调用并返回新的计数 */
+    record(userId, now = Date.now()) {
+      const day = dayKey(now)
+      const minute = minuteKey(now)
+      const existing = db.prepare('SELECT day_count AS dayCount, minute_count AS minuteCount FROM ai_usage WHERE user_id = ? AND day = ?')
+        .get(userId, day)
+      if (!existing) {
+        db.prepare('INSERT INTO ai_usage (user_id, day, day_count, minute, minute_count) VALUES (?, ?, 1, ?, 1)')
+          .run(userId, day, minute)
+        return { dayCount: 1, minuteCount: 1 }
+      }
+      const minuteCount = existing.minute === minute ? existing.minuteCount + 1 : 1
+      const dayCount = existing.dayCount + 1
+      db.prepare('UPDATE ai_usage SET day_count = ?, minute = ?, minute_count = ? WHERE user_id = ? AND day = ?')
+        .run(dayCount, minute, minuteCount, userId, day)
+      return { dayCount, minuteCount }
+    },
+    /** 清掉两天前的记录 */
+    cleanup(now = Date.now()) {
+      db.prepare('DELETE FROM ai_usage WHERE day < ?').run(dayKey(now - 2 * 24 * 60 * 60 * 1000))
     },
   }
 }

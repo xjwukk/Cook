@@ -364,6 +364,8 @@ export const useRecipeStore = defineStore('recipe', () => {
 
   return {
     recipesLength,
+    // 料理助手：在「审核数据 + 我的厨房」过滤后的菜谱里做候选池粗筛。
+    eligibleRecipes,
     onlyOwned,
     effectiveTool,
     excludedSelectionCount,

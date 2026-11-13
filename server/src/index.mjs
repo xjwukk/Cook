@@ -2,6 +2,13 @@ import { Buffer } from 'node:buffer'
 import { createServer } from 'node:http'
 import process from 'node:process'
 import {
+  AssistantError,
+  buildAssistantMessages,
+  callAssistantModel,
+  readAssistantConfig,
+  validateAssistantAnswer,
+} from './assistant.mjs'
+import {
   createSessionToken,
   hashPassword,
   hashSessionToken,
@@ -9,6 +16,7 @@ import {
   verifyPassword,
 } from './auth.mjs'
 import {
+  createAiUsageRepository,
   createSessionRepository,
   createUserDataRepository,
   createUserRepository,
@@ -34,6 +42,10 @@ const db = openDatabase(DB_PATH)
 const users = createUserRepository(db)
 const sessions = createSessionRepository(db)
 const userData = createUserDataRepository(db)
+const aiUsage = createAiUsageRepository(db)
+
+// 料理助手：模型由运营者在服务端配置，Key 只存在服务器上。
+const assistantConfig = readAssistantConfig(process.env)
 
 // 预置管理员：只在首次启动时创建；已存在时只补角色，不覆盖密码。
 const ADMIN_USERNAME = process.env.COOK_ADMIN_USERNAME || ''
@@ -53,7 +65,9 @@ async function seedAdmin() {
 }
 
 sessions.deleteExpired()
+aiUsage.cleanup()
 setInterval(() => sessions.deleteExpired(), 60 * 60 * 1000).unref()
+setInterval(() => aiUsage.cleanup(), 24 * 60 * 60 * 1000).unref()
 
 // ---------- 基础工具 ----------
 
@@ -212,6 +226,45 @@ function endSession(req, res) {
 const routes = [
   ['GET', /^\/api\/health$/, async (req, res) => {
     sendJson(res, 200, { ok: true, users: users.count() })
+  }],
+
+  // 助手状态：免登录，页面据此决定是否禁用输入框。
+  ['GET', /^\/api\/assistant\/status$/, async (req, res) => {
+    sendJson(res, 200, { enabled: assistantConfig.enabled, model: assistantConfig.enabled ? assistantConfig.model : '' })
+  }],
+
+  // 助手对话：必须登录，按账号限流。
+  ['POST', /^\/api\/assistant\/chat$/, async (req, res) => {
+    const user = currentUser(req)
+    if (!user) {
+      sendJson(res, 401, { error: '请先登录再使用料理助手' })
+      return
+    }
+    if (!assistantConfig.enabled) {
+      sendJson(res, 503, { error: '服务器尚未配置模型，料理助手暂不可用' })
+      return
+    }
+
+    const usage = aiUsage.peek(user.id)
+    if (assistantConfig.dailyLimit > 0 && usage.dayCount >= assistantConfig.dailyLimit) {
+      sendJson(res, 429, { error: '今天的助手使用次数已用完，明天再来' })
+      return
+    }
+    if (assistantConfig.minuteLimit > 0 && usage.minuteCount >= assistantConfig.minuteLimit) {
+      sendJson(res, 429, { error: '提问太频繁，稍等一会儿再试' })
+      return
+    }
+
+    const body = await readJson(req)
+    const candidates = Array.isArray(body.candidates) ? body.candidates.slice(0, assistantConfig.maxCandidates) : []
+    const candidateIds = candidates.map(candidate => Number(candidate?.id)).filter(Number.isInteger)
+
+    const messages = buildAssistantMessages({ ...body, candidates })
+    const raw = await callAssistantModel(assistantConfig, messages)
+    const answer = validateAssistantAnswer(raw, candidateIds)
+
+    aiUsage.record(user.id)
+    sendJson(res, 200, answer)
   }],
 
   ['POST', /^\/api\/auth\/register$/, async (req, res) => {
@@ -410,6 +463,11 @@ const server = createServer(async (req, res) => {
     sendJson(res, 404, { error: '接口不存在' })
   }
   catch (error) {
+    // AssistantError 自带可对外展示的中文提示；其余错误不泄露内部细节。
+    if (error instanceof AssistantError) {
+      sendJson(res, error.status, { error: error.message })
+      return
+    }
     const status = Number(error?.status) || 500
     if (status >= 500)
       console.error('[cook-server]', error)

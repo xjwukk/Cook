@@ -24,20 +24,15 @@ export const publicPages = {
     description: appDescription,
     path: '/',
   },
-  random: {
-    title: '今天吃什么｜料理手帐',
-    description: '还没想好吃什么？从料理手帐里随机看一道菜，不合适再换一道。',
-    path: '/random',
-  },
   library: {
     title: '菜谱｜料理手帐',
     description: '浏览料理手帐收录的家常菜，按菜名查找，也可以只看收藏。',
     path: '/library',
   },
-  apps: {
-    title: '发现｜料理手帐',
-    description: '不知道吃什么时，随机挑一道家常菜。',
-    path: '/apps',
+  assistant: {
+    title: '料理助手｜料理手帐',
+    description: '用一句话描述你的食材和口味，料理助手会从菜谱库里挑几道适合的菜。',
+    path: '/assistant',
   },
 } as const satisfies Record<string, CookSeoPage>
 
@@ -46,12 +41,12 @@ const routeSeoByPath: Record<string, CookSeoPage> = {
   '/home': publicPages.home,
   '/tabs': publicPages.home,
   '/tabs/home': publicPages.home,
-  '/random': publicPages.random,
-  '/apps/random': publicPages.random,
   '/library': publicPages.library,
   '/tabs/library': publicPages.library,
-  '/apps': publicPages.apps,
-  '/tabs/apps': publicPages.apps,
+  // /apps 是 /assistant 的历史别名
+  '/assistant': publicPages.assistant,
+  '/tabs/assistant': publicPages.assistant,
+  '/apps': publicPages.assistant,
 }
 
 export function absoluteSiteUrl(path = '/') {

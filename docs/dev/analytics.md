@@ -27,19 +27,22 @@ NUXT_PUBLIC_CLARITY_DOMAINS=cook.yunyoujun.cn,cook.yunle.fun
 
 ## 事件与回放
 
-| 事件                 | 操作                                                    |
-| -------------------- | ------------------------------------------------------- |
-| `click_stuff`        | 旧事件：点选或取消预设食材按钮（保留历史口径）          |
-| `click_tool`         | 旧事件：点选或取消厨具按钮                              |
-| `click_dish`         | 旧事件：详情或旧标签中的外部做法点击，不是打开详情      |
-| `view_cook`          | 做菜页进入可见状态，Ionic 缓存的后台页面不计入          |
-| `select_ingredients` | 可见做菜页从空选材变为非空；也包含进入时恢复的已有食材  |
-| `view_results`       | 已展开、进入视口、加载完成且存在推荐结果                |
-| `results_empty`      | 已展开且加载完成，但整个当前筛选没有推荐结果            |
-| `view_recipe_detail` | 菜谱详情弹层已展示（Ionic did-present），不是仅点击列表 |
-| `click_recipe_video` | 点击外部菜谱做法，覆盖详情、菜谱库、收藏、历史及旧标签  |
-| `parse_query`        | 做菜页输入框按整句识别出了条件（只列食材时不计）        |
-| `parse_query_empty`  | 做菜页输入框什么都没认出                                |
+| 事件                     | 操作                                                    |
+| ------------------------ | ------------------------------------------------------- |
+| `click_stuff`            | 旧事件：点选或取消预设食材按钮（保留历史口径）          |
+| `click_tool`             | 旧事件：点选或取消厨具按钮                              |
+| `click_dish`             | 旧事件：详情或旧标签中的外部做法点击，不是打开详情      |
+| `view_cook`              | 做菜页进入可见状态，Ionic 缓存的后台页面不计入          |
+| `select_ingredients`     | 可见做菜页从空选材变为非空；也包含进入时恢复的已有食材  |
+| `view_results`           | 已展开、进入视口、加载完成且存在推荐结果                |
+| `results_empty`          | 已展开且加载完成，但整个当前筛选没有推荐结果            |
+| `view_recipe_detail`     | 菜谱详情弹层已展示（Ionic did-present），不是仅点击列表 |
+| `click_recipe_video`     | 点击外部菜谱做法，覆盖详情、菜谱库、收藏、历史及旧标签  |
+| `parse_query`            | 做菜页输入框按整句识别出了条件（只列食材时不计）        |
+| `parse_query_empty`      | 做菜页输入框什么都没认出                                |
+| `ask_assistant`          | 料理助手收到一次提问（只记事件，不含问题原文）          |
+| `view_assistant_answer`  | 料理助手成功返回一屏回答                                |
+| `click_assistant_recipe` | 点击助手回答里的菜谱卡片                                |
 
 主漏斗按顺序配置为 `view_cook → select_ingredients → view_results → view_recipe_detail → click_recipe_video`。厨具是可选筛选，不作为必经步骤；仅选厨具、菜谱库等直接访问路径另行分析。视频事件表示点击意图，不表示外站打开或播放成功。
 

@@ -27,11 +27,13 @@ describe('web app citation metadata', () => {
   })
 
   it('rewrites public route shells without touching the homepage or unrelated html', () => {
-    const random = applyCookRouteSeo(shell(), '/random/')
-    expect(random).toContain(`<title>${publicPages.random.title}</title>`)
-    expect(random).toContain(`content="${publicPages.random.description}"`)
-    expect(random).toContain(`href="${absoluteSiteUrl('/random')}"`)
-    expect(random).toContain(`property="og:url" content="${absoluteSiteUrl('/random')}"`)
+    const assistant = applyCookRouteSeo(shell(), '/assistant')
+    expect(assistant).toContain(`<title>${publicPages.assistant.title}</title>`)
+    expect(assistant).toContain(`content="${publicPages.assistant.description}"`)
+    expect(assistant).toContain(`href="${absoluteSiteUrl('/assistant')}"`)
+    expect(assistant).toContain(`property="og:url" content="${absoluteSiteUrl('/assistant')}"`)
+    // 旧入口 /apps 指向同一个助手页
+    expect(applyCookRouteSeo(shell(), '/apps')).toContain(`<title>${publicPages.assistant.title}</title>`)
     expect(applyCookRouteSeo(shell(), '/home')).toBe(shell())
     expect(applyCookRouteSeo(shell('其他标题'), '/library')).toBe(shell('其他标题'))
     expect(applyCookRouteSeo(shell(), '/settings')).toBe(shell())

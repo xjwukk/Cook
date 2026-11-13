@@ -3,6 +3,7 @@ export type CookEventName
     | 'view_cook' | 'select_ingredients' | 'view_results'
     | 'results_empty' | 'view_recipe_detail' | 'click_recipe_video'
     | 'parse_query' | 'parse_query_empty'
+    | 'ask_assistant' | 'view_assistant_answer' | 'click_assistant_recipe'
 
 interface ClarityConfig {
   projectId: string

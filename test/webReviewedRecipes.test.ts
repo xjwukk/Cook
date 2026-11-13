@@ -2,13 +2,10 @@ import type { RecipeItem } from '../apps/web/app/types'
 import type { DietaryData, InstitutionalLowGIData, LunchReviewData, ReviewedRecipeCatalog } from '../apps/web/app/utils/reviewed-recipes'
 import type { RecipeTextData } from '../packages/cook/src/types/recipe-text'
 import { readFileSync } from 'node:fs'
-import { flushPromises, mount } from '@vue/test-utils'
-import * as VueUse from '@vueuse/core'
+import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { effectScope, ref } from 'vue'
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import ReviewedRecipeFilters from '../apps/web/app/components/cook/ReviewedRecipeFilters.vue'
-import { useRandomRecipe } from '../apps/web/app/composables/recipe'
 import { customRecipes } from '../apps/web/app/composables/store/customRecipe'
 import { useRecipeStore } from '../apps/web/app/composables/store/recipe'
 import { db } from '../apps/web/app/utils/db'
@@ -215,46 +212,6 @@ describe('web reviewed candidate pool', () => {
     store.keyword = '鸡蛋'
     store.toggleTools('一口大锅')
     expect(store.randomPool).toEqual(seededRecipes)
-  })
-
-  it('invalidates displayed random results when candidate filters change', async () => {
-    const store = useRecipeStore()
-    await store.loadReviewedRecipes(async () => catalog)
-    store.toggleDietaryGoal('weight-aware')
-    const scope = effectScope()
-    try {
-      const random = scope.run(() => useRandomRecipe(ref(1)))!
-      await random.random()
-      expect(random.randomRecipes.value).toHaveLength(1)
-      store.keyword = '没有这道菜'
-      await flushPromises()
-      expect(store.randomPool).toEqual([])
-      expect(random.randomRecipes.value).toEqual([])
-    }
-    finally {
-      scope.stop()
-    }
-  })
-
-  it('keeps reviewed random results out of the ordinary persistent cache', async () => {
-    const store = useRecipeStore()
-    await store.loadReviewedRecipes(async () => catalog)
-    store.toggleDietaryGoal('weight-aware')
-    const original = [seededRecipes[0]]
-    const saved = ref(original)
-    const storage = vi.spyOn(VueUse, 'useStorage').mockReturnValue(saved as ReturnType<typeof VueUse.useStorage>)
-    const scope = effectScope()
-    try {
-      const random = scope.run(() => useRandomRecipe(ref(1)))!
-      await random.random()
-      expect(random.randomRecipes.value).toHaveLength(1)
-      expect(saved.value).toEqual(original)
-      expect(random.randomRecipes.value).not.toBe(saved.value)
-    }
-    finally {
-      scope.stop()
-      storage.mockRestore()
-    }
   })
 
   it('derives random and private recipe behavior from the same constrained pool', async () => {

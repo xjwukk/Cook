@@ -46,7 +46,7 @@ const { sections } = usePersonalCatalog()
         </div>
       </template>
       <p class="cook-group-footer">
-        用到这些食材的菜不再推荐，「今天吃什么」也会避开。火锅这类大杂烩照常推荐，只是不再建议往里加。
+        用到这些食材的菜不再推荐，料理助手也会避开。火锅这类大杂烩照常推荐，只是不再建议往里加。
       </p>
     </ion-content>
   </ion-modal>

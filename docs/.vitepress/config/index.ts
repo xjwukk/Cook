@@ -121,6 +121,7 @@ export default defineConfig(withYunlefun({
             { text: '0018 冰箱拍照录入', link: '/decisions/0018-fridge-photo-intake' },
             { text: '0019 Web 视觉方向', link: '/decisions/0019-warm-editorial-web-visual-direction' },
             { text: '0020 品牌更名与视觉令牌', link: '/decisions/0020-brand-rename-and-warm-editorial-tokens' },
+            { text: '0021 料理助手', link: '/decisions/0021-cooking-assistant' },
           ],
         },
       ],

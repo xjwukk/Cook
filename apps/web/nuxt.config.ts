@@ -166,7 +166,7 @@ export default defineNuxtConfig({
     },
     prerender: {
       crawlLinks: false,
-      routes: ['/', '/home', '/library', '/apps', '/my', '/catalog', '/kitchen', '/recipes/favorites', '/recipes/history', '/recipes/mine', '/recipes/new', '/account', '/random', '/404', '/settings'],
+      routes: ['/', '/home', '/library', '/assistant', '/my', '/catalog', '/kitchen', '/recipes/favorites', '/recipes/history', '/recipes/mine', '/recipes/new', '/account', '/404', '/settings'],
       ignore: ['/hi'],
     },
   },

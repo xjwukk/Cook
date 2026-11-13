@@ -51,7 +51,7 @@ Project decisions are recorded in `docs/decisions/` — read the relevant one be
 ### Monorepo Structure (pnpm workspaces)
 
 - **apps/web** — Nuxt app. Root scripts (`pnpm dev`, `pnpm build`, `pnpm typecheck`) proxy to it. Ionic UI and routing are retained.
-- **server** — Self-hosted account service. Node 24 built-ins only (`node:sqlite`, `node:crypto`, `node:http`), no runtime dependencies. Serves `/api/auth/*` (register/login/logout/password), `/api/auth/me`, `/api/user-data` and `/api/admin/users`. Sessions are HttpOnly cookies; passwords use scrypt with per-user salt; registration requires `COOK_INVITE_CODE`; admin is seeded from `COOK_ADMIN_USERNAME/PASSWORD`. See `docs/dev/self-hosting.md`.
+- **server** — Self-hosted account service. Node 24 built-ins only (`node:sqlite`, `node:crypto`, `node:http`), no runtime dependencies. Serves `/api/auth/*` (register/login/logout/password), `/api/auth/me`, `/api/user-data`, `/api/admin/users`, and the optional cooking assistant (`/api/assistant/status`, `/api/assistant/chat`, model proxied via `server/src/assistant.mjs` with `COOK_AI_*` env). Sessions are HttpOnly cookies; passwords use scrypt with per-user salt; registration requires `COOK_INVITE_CODE`; admin is seeded from `COOK_ADMIN_USERNAME/PASSWORD`. See `docs/dev/self-hosting.md`.
 - **packages/cook** — Published as `@yunyoujun/cook`. Types, recommendation/search logic, and the CLI (`convert`, `fetch`, `search`).
 - **packages/data** — Recipe CSV sources and generated JSON, food dictionary (`food.json`), pantry defaults, ingredient aliases, sentence-input word lists, side tables (`recipe-amounts.json`, `recipe-dietary.json`, `recipe-institutional-low-gi.json`, `video-stats.json`), fixtures (`fixtures/*.json`, regenerate with `pnpm fixtures`) and JSON Schemas. `recipe-meta.json` carries `schemaVersion` and `dataVersion`.
 - **packages/shared** — `Assets.xcassets` method/tool icons consumed by `apps/web/uno.config.ts`.
@@ -61,7 +61,7 @@ Project decisions are recorded in `docs/decisions/` — read the relevant one be
 
 ### App Source (`apps/web/app/`)
 
-- **pages/** — Nuxt file-based routing: tabs (`tabs/home|library|apps|my`), `recipes/*`, `catalog.vue`, `account.vue`, `admin/users.vue`, `settings.vue`, `cookbooks/*` (placeholder).
+- **pages/** — Nuxt file-based routing: tabs (`tabs/home|library|assistant|my`), `recipes/*`, `catalog.vue`, `account.vue`, `admin/users.vue`, `settings.vue`, `cookbooks/*` (placeholder).
 - **components/** — Feature folders: `recipe/`, `tags/`, `catalog/`, `cook/`, `cookbook/`, `workbench/`, `common/`, `layouts/`, plus `ylf/` wrappers.
 - **composables/** — `useAccount` (session state), `useAccountSync` (merge + debounced upload), Pinia-like stores in `composables/store/` (`app`, `recipe`, `favorite`, `history`, `customRecipe`, `userData`).
 - **utils/** — Pure helpers: `db.ts` (Dexie), `storageScope.ts` (per-account localStorage namespacing), `userData.ts` (merge/export format), `recipe.ts`, `analytics.ts`, `yunleHost.ts`.
