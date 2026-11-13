@@ -108,43 +108,6 @@ function addUnlisted() {
 <template>
   <div class="cooking-workbench" :class="{ 'is-desktop': desktop }">
     <div class="wb-layout">
-      <section class="wb-bench" aria-labelledby="wb-board-title">
-        <div class="wb-board" :class="{ 'is-drag-over': dragActive }" @dragover="dragOver" @dragleave.self="dragActive = false" @drop="dropIngredient">
-          <div class="wb-section-heading">
-            <h2 id="wb-board-title">
-              已选食材 <span>{{ rStore.selectedStuff.length }} 种</span>
-            </h2>
-          </div>
-          <div class="wb-board-items">
-            <button v-for="name in rStore.selectedStuff" :key="name" type="button" class="wb-board-item" :aria-label="`移除${name}`" @click="rStore.toggleStuff(name)">
-              <span class="wb-remove" aria-hidden="true">×</span>
-              <span class="wb-emoji" aria-hidden="true">{{ emoji(name) }}</span>
-              <span>{{ name }}</span>
-            </button>
-            <p v-if="!rStore.onlyOwned && !rStore.selectedStuff.length" class="wb-selection-empty">
-              从食材列表中点选，或拖入食材。
-            </p>
-          </div>
-          <p class="wb-board-note">
-            点按已选食材即可移除。
-          </p>
-          <button v-if="!rStore.onlyOwned && !rStore.selectedStuff.length" class="wb-example" type="button" @click="example">
-            试一试：番茄 + 鸡蛋 + 炒锅 <span aria-hidden="true">→</span>
-          </button>
-        </div>
-        <div class="wb-tools wb-panel">
-          <h2>厨具 <span>（可选）</span></h2>
-          <div class="wb-pills" role="group" aria-label="工作台厨具">
-            <button v-for="tool in tools" :key="tool.name" type="button" :aria-pressed="rStore.effectiveTool === tool.name" @click="rStore.clickTool(tool)">
-              <span v-if="toolIcons[tool.name] || tool.icon" class="wb-cooking-icon" :class="toolIcons[tool.name] || tool.icon" aria-hidden="true" /><span v-else aria-hidden="true">{{ tool.emoji }}</span>{{ tool.name === '一口大锅' ? '炒锅' : tool.name }}<span v-if="rStore.effectiveTool === tool.name" aria-hidden="true">✓</span>
-            </button>
-          </div>
-        </div>
-        <button class="wb-results-jump" type="button" @click="goToResults">
-          查看推荐菜谱 · {{ count }} 道 <span aria-hidden="true">↓</span>
-        </button>
-      </section>
-
       <section class="wb-tray wb-panel" aria-labelledby="wb-tray-title">
         <h2 id="wb-tray-title">
           选择食材
@@ -238,6 +201,43 @@ function addUnlisted() {
         </button>
       </section>
 
+      <section class="wb-bench" aria-labelledby="wb-board-title">
+        <div class="wb-board" :class="{ 'is-drag-over': dragActive }" @dragover="dragOver" @dragleave.self="dragActive = false" @drop="dropIngredient">
+          <div class="wb-section-heading">
+            <h2 id="wb-board-title">
+              已选食材 <span>{{ rStore.selectedStuff.length }} 种</span>
+            </h2>
+          </div>
+          <div class="wb-board-items">
+            <button v-for="name in rStore.selectedStuff" :key="name" type="button" class="wb-board-item" :aria-label="`移除${name}`" @click="rStore.toggleStuff(name)">
+              <span class="wb-remove" aria-hidden="true">×</span>
+              <span class="wb-emoji" aria-hidden="true">{{ emoji(name) }}</span>
+              <span>{{ name }}</span>
+            </button>
+            <p v-if="!rStore.onlyOwned && !rStore.selectedStuff.length" class="wb-selection-empty">
+              从食材列表中点选，或拖入食材。
+            </p>
+          </div>
+          <p class="wb-board-note">
+            点按已选食材即可移除。
+          </p>
+          <button v-if="!rStore.onlyOwned && !rStore.selectedStuff.length" class="wb-example" type="button" @click="example">
+            试一试：番茄 + 鸡蛋 + 炒锅 <span aria-hidden="true">→</span>
+          </button>
+        </div>
+        <div class="wb-tools wb-panel">
+          <h2>厨具 <span>（可选）</span></h2>
+          <div class="wb-pills" role="group" aria-label="工作台厨具">
+            <button v-for="tool in tools" :key="tool.name" type="button" :aria-pressed="rStore.effectiveTool === tool.name" @click="rStore.clickTool(tool)">
+              <span v-if="toolIcons[tool.name] || tool.icon" class="wb-cooking-icon" :class="toolIcons[tool.name] || tool.icon" aria-hidden="true" /><span v-else aria-hidden="true">{{ tool.emoji }}</span>{{ tool.name === '一口大锅' ? '炒锅' : tool.name }}<span v-if="rStore.effectiveTool === tool.name" aria-hidden="true">✓</span>
+            </button>
+          </div>
+        </div>
+        <button class="wb-results-jump" type="button" @click="goToResults">
+          查看推荐菜谱 · {{ count }} 道 <span aria-hidden="true">↓</span>
+        </button>
+      </section>
+
       <section class="wb-results wb-panel" aria-labelledby="wb-results-title" :aria-busy="rStore.isSearching">
         <div class="wb-section-heading">
           <h2 id="wb-results-title" ref="resultsHeading" tabindex="-1">
@@ -312,9 +312,9 @@ function addUnlisted() {
 }
 .wb-layout {
   display: grid;
-  grid-template-columns: minmax(320px, 0.9fr) minmax(0, 1.5fr);
-  /* 已选食材在左（窄栏），选择食材在右（宽栏，网格需要宽度），推荐菜谱在右下 */
-  grid-template-areas: 'bench tray' 'bench results';
+  grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.9fr);
+  /* 阅读顺序：选择食材 → 已选食材 → 推荐菜谱；食材网格需要更多宽度 */
+  grid-template-areas: 'tray bench' 'tray results';
   align-items: start;
   gap: 20px;
 }
@@ -597,7 +597,7 @@ function addUnlisted() {
   }
   .wb-layout {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: 'bench' 'tray' 'results';
+    grid-template-areas: 'tray' 'bench' 'results';
     gap: 16px;
   }
   .wb-panel,
