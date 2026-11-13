@@ -122,6 +122,13 @@ function handleSyncClick(): void {
       </ion-list>
 
       <ion-list :inset="true">
+        <ion-item router-link="/assistant-settings" :detail="true">
+          <CookListIcon slot="start" :icon="ioniconsChatbubbleEllipsesOutline" color="#b84e27" />
+          <ion-label>
+            <h2>助手设置</h2>
+            <p>配置料理助手使用的模型</p>
+          </ion-label>
+        </ion-item>
         <ion-item router-link="/settings">
           <CookListIcon slot="start" :icon="ioniconsSettingsOutline" color="#8a8078" />
           <ion-label>设置</ion-label>

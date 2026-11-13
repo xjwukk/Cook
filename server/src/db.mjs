@@ -46,6 +46,15 @@ export function openDatabase(file) {
       minute_count INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (user_id, day)
     );
+
+    CREATE TABLE IF NOT EXISTS ai_config (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      base_url TEXT NOT NULL,
+      model TEXT NOT NULL,
+      api_key_cipher TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      updated_at INTEGER NOT NULL
+    );
   `)
 
   // 旧库升级：users 表没有 role 列时补上，已有账号默认是普通用户。
@@ -171,6 +180,34 @@ export function createAiUsageRepository(db) {
     /** 清掉两天前的记录 */
     cleanup(now = Date.now()) {
       db.prepare('DELETE FROM ai_usage WHERE day < ?').run(dayKey(now - 2 * 24 * 60 * 60 * 1000))
+    },
+  }
+}
+
+/** 每个账号自己的模型配置；API Key 只存密文。 */
+export function createAiConfigRepository(db) {
+  return {
+    get(userId) {
+      return db.prepare(`
+        SELECT base_url AS baseUrl, model, api_key_cipher AS apiKeyCipher,
+               enabled, updated_at AS updatedAt
+        FROM ai_config WHERE user_id = ?
+      `).get(userId)
+    },
+    put(userId, { baseUrl, model, apiKeyCipher, enabled }) {
+      const now = Date.now()
+      db.prepare(`
+        INSERT INTO ai_config (user_id, base_url, model, api_key_cipher, enabled, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+          base_url = excluded.base_url, model = excluded.model,
+          api_key_cipher = excluded.api_key_cipher, enabled = excluded.enabled,
+          updated_at = excluded.updated_at
+      `).run(userId, baseUrl, model, apiKeyCipher, enabled ? 1 : 0, now)
+      return { baseUrl, model, enabled: Boolean(enabled), updatedAt: now }
+    },
+    remove(userId) {
+      db.prepare('DELETE FROM ai_config WHERE user_id = ?').run(userId)
     },
   }
 }

@@ -5,7 +5,10 @@ import {
   AssistantError,
   buildAssistantMessages,
   callAssistantModel,
+  normalizeBaseUrl,
+  normalizeModel,
   readAssistantConfig,
+  testAssistantConnection,
   validateAssistantAnswer,
 } from './assistant.mjs'
 import {
@@ -16,12 +19,14 @@ import {
   verifyPassword,
 } from './auth.mjs'
 import {
+  createAiConfigRepository,
   createAiUsageRepository,
   createSessionRepository,
   createUserDataRepository,
   createUserRepository,
   openDatabase,
 } from './db.mjs'
+import { decryptSecret, encryptSecret, loadSecret } from './secret.mjs'
 import { isValidUserData } from './user-data.mjs'
 
 const PORT = Number(process.env.PORT || 8787)
@@ -43,6 +48,8 @@ const users = createUserRepository(db)
 const sessions = createSessionRepository(db)
 const userData = createUserDataRepository(db)
 const aiUsage = createAiUsageRepository(db)
+const aiConfig = createAiConfigRepository(db)
+const secretKey = loadSecret({ dbPath: DB_PATH })
 
 // 料理助手：模型由运营者在服务端配置，Key 只存在服务器上。
 const assistantConfig = readAssistantConfig(process.env)
@@ -207,6 +214,26 @@ function requireAdmin(req, res) {
   return user
 }
 
+/** 读取账号自己的模型配置；未配置、未启用或 Key 解不开时返回 null。 */
+function resolveUserAssistantConfig(userId) {
+  const row = aiConfig.get(userId)
+  if (!row || !row.enabled)
+    return null
+  const apiKey = decryptSecret(secretKey, row.apiKeyCipher)
+  if (!apiKey)
+    return null
+  return {
+    enabled: true,
+    baseUrl: row.baseUrl,
+    model: row.model,
+    apiKey,
+    timeout: assistantConfig.timeout,
+    maxCandidates: assistantConfig.maxCandidates,
+    dailyLimit: assistantConfig.dailyLimit,
+    minuteLimit: assistantConfig.minuteLimit,
+  }
+}
+
 function startSession(res, user) {
   const token = createSessionToken()
   sessions.create(hashSessionToken(token), user.id, SESSION_TTL)
@@ -228,20 +255,121 @@ const routes = [
     sendJson(res, 200, { ok: true, users: users.count() })
   }],
 
-  // 助手状态：免登录，页面据此决定是否禁用输入框。
+  // 助手状态：免登录。登录后额外返回该账号自己的配置是否可用。
   ['GET', /^\/api\/assistant\/status$/, async (req, res) => {
-    sendJson(res, 200, { enabled: assistantConfig.enabled, model: assistantConfig.enabled ? assistantConfig.model : '' })
+    const user = currentUser(req)
+    const own = user ? resolveUserAssistantConfig(user.id) : null
+    const source = own ? 'user' : assistantConfig.enabled ? 'server' : 'none'
+    sendJson(res, 200, {
+      enabled: Boolean(own || assistantConfig.enabled),
+      model: own ? own.model : assistantConfig.enabled ? assistantConfig.model : '',
+      source,
+    })
   }],
 
-  // 助手对话：必须登录，按账号限流。
+  // 读取当前账号的模型配置：只回显地址与模型，Key 永远不返回明文。
+  ['GET', /^\/api\/assistant\/config$/, async (req, res) => {
+    const user = currentUser(req)
+    if (!user) {
+      sendJson(res, 401, { error: '未登录' })
+      return
+    }
+    const row = aiConfig.get(user.id)
+    const apiKey = row ? decryptSecret(secretKey, row.apiKeyCipher) : ''
+    sendJson(res, 200, {
+      configured: Boolean(row && apiKey),
+      enabled: Boolean(row?.enabled && apiKey),
+      baseUrl: row?.baseUrl ?? '',
+      model: row?.model ?? '',
+      keyHint: apiKey ? `${apiKey.slice(0, 3)}…${apiKey.slice(-4)}` : '',
+      source: row && apiKey ? 'user' : assistantConfig.enabled ? 'server' : 'none',
+      serverModel: assistantConfig.enabled ? assistantConfig.model : '',
+    })
+  }],
+
+  // 保存当前账号的模型配置。apiKey 留空表示沿用已保存的 Key。
+  ['PUT', /^\/api\/assistant\/config$/, async (req, res) => {
+    const user = currentUser(req)
+    if (!user) {
+      sendJson(res, 401, { error: '未登录' })
+      return
+    }
+    const body = await readJson(req)
+    const baseUrl = normalizeBaseUrl(body.baseUrl)
+    const model = normalizeModel(body.model)
+    const existing = aiConfig.get(user.id)
+    const existingKey = existing ? decryptSecret(secretKey, existing.apiKeyCipher) : ''
+    const inputKey = String(body.apiKey ?? '').trim()
+    const apiKey = inputKey || existingKey
+    if (!apiKey) {
+      sendJson(res, 400, { error: '请填写 API Key' })
+      return
+    }
+    if (inputKey && (inputKey.length < 8 || inputKey.length > 400)) {
+      sendJson(res, 400, { error: 'API Key 长度不正确' })
+      return
+    }
+    const enabled = body.enabled !== false
+    aiConfig.put(user.id, {
+      baseUrl,
+      model,
+      apiKeyCipher: encryptSecret(secretKey, apiKey),
+      enabled,
+    })
+    sendJson(res, 200, { saved: true, enabled, model, baseUrl })
+  }],
+
+  ['DELETE', /^\/api\/assistant\/config$/, async (req, res) => {
+    const user = currentUser(req)
+    if (!user) {
+      sendJson(res, 401, { error: '未登录' })
+      return
+    }
+    aiConfig.remove(user.id)
+    sendJson(res, 204)
+  }],
+
+  // 保存前试连：用表单里的地址/模型/Key 发一条极小的请求。
+  ['POST', /^\/api\/assistant\/config\/test$/, async (req, res) => {
+    const user = currentUser(req)
+    if (!user) {
+      sendJson(res, 401, { error: '未登录' })
+      return
+    }
+    if (tooManyAttempts(`ai-test:${user.id}`)) {
+      sendJson(res, 429, { error: '测试太频繁，请稍后再试' })
+      return
+    }
+    recordAttempt(`ai-test:${user.id}`)
+
+    const body = await readJson(req)
+    const baseUrl = normalizeBaseUrl(body.baseUrl)
+    const model = normalizeModel(body.model)
+    const existing = aiConfig.get(user.id)
+    const apiKey = String(body.apiKey ?? '').trim() || (existing ? decryptSecret(secretKey, existing.apiKeyCipher) : '')
+    if (!apiKey) {
+      sendJson(res, 400, { error: '请填写 API Key' })
+      return
+    }
+    await testAssistantConnection({
+      baseUrl,
+      model,
+      apiKey,
+      timeout: assistantConfig.timeout,
+    })
+    sendJson(res, 200, { ok: true })
+  }],
+
+  // 助手对话：必须登录，按账号限流；账号配置优先，环境变量作为兜底。
   ['POST', /^\/api\/assistant\/chat$/, async (req, res) => {
     const user = currentUser(req)
     if (!user) {
       sendJson(res, 401, { error: '请先登录再使用料理助手' })
       return
     }
-    if (!assistantConfig.enabled) {
-      sendJson(res, 503, { error: '服务器尚未配置模型，料理助手暂不可用' })
+    const config = resolveUserAssistantConfig(user.id) ?? (assistantConfig.enabled ? assistantConfig : null)
+    if (!config) {
+      sendJson(res, 503, { error: '还没有配置模型，请在「我的 → 助手设置」里填写' })
       return
     }
 
@@ -260,7 +388,7 @@ const routes = [
     const candidateIds = candidates.map(candidate => Number(candidate?.id)).filter(Number.isInteger)
 
     const messages = buildAssistantMessages({ ...body, candidates })
-    const raw = await callAssistantModel(assistantConfig, messages)
+    const raw = await callAssistantModel(config, messages)
     const answer = validateAssistantAnswer(raw, candidateIds)
 
     aiUsage.record(user.id)

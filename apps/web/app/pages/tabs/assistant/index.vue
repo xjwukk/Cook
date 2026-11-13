@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import type { RecipeMatch } from '@yunyoujun/cook/recommend'
 import type { RecipeItem } from '~/types'
+import { onIonViewWillEnter } from '@ionic/vue'
 import { cookDocumentHead, publicPages } from '~/constants'
 import { trackCookEvent } from '~/utils/analytics'
 
@@ -36,7 +37,7 @@ const disabledReason = computed(() => {
   if (checking.value)
     return '正在检查助手状态…'
   if (!enabled.value)
-    return '服务器尚未配置大模型，请联系管理员'
+    return '还没有配置模型，去「我的 → 助手设置」填写'
   return ''
 })
 
@@ -65,6 +66,11 @@ function openDetail(match: RecipeMatch): void {
 }
 
 onMounted(() => {
+  void refreshStatus()
+})
+
+// 从「助手设置」返回时页面被缓存，重新检查一次配置是否已可用。
+onIonViewWillEnter(() => {
   void refreshStatus()
 })
 
@@ -129,6 +135,13 @@ watch(() => messages.value.length, scrollToBottom)
           :hint="disabledReason"
           @send="ask"
         />
+        <NuxtLink
+          v-if="isAuthenticated && !checking && !enabled"
+          class="assistant-config-link"
+          to="/assistant-settings"
+        >
+          去配置模型
+        </NuxtLink>
       </div>
     </ion-footer>
 
@@ -248,6 +261,16 @@ watch(() => messages.value.length, scrollToBottom)
   border-top: 1px solid var(--c-rule);
   background: var(--c-paper);
   padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.assistant-config-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  margin-top: 4px;
+  color: var(--c-brand-ink);
+  font-size: var(--fs-base);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 @media (prefers-reduced-motion: reduce) {
   .assistant-dot {

@@ -45,6 +45,60 @@ export function readAssistantConfig(env = process.env) {
   }
 }
 
+/** 只允许 http/https；http 仅放行本机地址，避免把 Key 明文发到外网。 */
+export function normalizeBaseUrl(value) {
+  const text = String(value ?? '').trim().replace(/\/+$/, '')
+  if (!text)
+    throw new AssistantError('INVALID_CONFIG', '请填写模型服务地址', 400)
+  let url
+  try {
+    url = new URL(text)
+  }
+  catch {
+    throw new AssistantError('INVALID_CONFIG', '模型服务地址不是合法 URL', 400)
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:')
+    throw new AssistantError('INVALID_CONFIG', '模型服务地址只支持 http 或 https', 400)
+  if (url.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
+    throw new AssistantError('INVALID_CONFIG', '非本机地址必须使用 https', 400)
+  return text
+}
+
+export function normalizeModel(value) {
+  const text = String(value ?? '').trim()
+  if (!text)
+    throw new AssistantError('INVALID_CONFIG', '请填写模型名称', 400)
+  if (text.length > 80)
+    throw new AssistantError('INVALID_CONFIG', '模型名称过长', 400)
+  return text
+}
+
+/** 用一条极小的请求验证地址与 Key 是否可用。 */
+export async function testAssistantConnection(config) {
+  const response = await fetch(`${config.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${config.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: config.model,
+      messages: [{ role: 'user', content: 'ping' }],
+      max_tokens: 8,
+      stream: false,
+    }),
+    signal: AbortSignal.timeout(Math.min(config.timeout, 15_000)),
+    redirect: 'error',
+    credentials: 'omit',
+    cache: 'no-store',
+  })
+  if (response.status === 401 || response.status === 403)
+    throw new AssistantError('INVALID_CONFIG', 'API Key 无效或没有权限', 400)
+  if (!response.ok)
+    throw new AssistantError('SERVICE_UNAVAILABLE', `模型服务返回 ${response.status}`, 503)
+  return true
+}
+
 const SYSTEM_PROMPT = [
   '你是「料理手帐」的做菜助手。你只能根据给定的候选菜谱和用户的库存回答。',
   '规则：',

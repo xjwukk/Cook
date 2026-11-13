@@ -31,7 +31,8 @@
 - **未配置模型**：`/api/assistant/status` 返回 `enabled: false`，页面提示并禁用输入，不做本地降级。
 - **发送的数据**：食材、厨具、调料、收藏菜名、最近做过的菜名、候选菜谱（仅白名单字段）。不发送私人菜谱正文、忌口记录或账号资料。
 - **配额**：按账号记每日与每分钟次数，存在 SQLite 的 `ai_usage` 表里，进程重启不会重置。
-- **技术实现**：服务端 `server/src/assistant.mjs` 走 OpenAI 兼容的 `/chat/completions`，`response_format: json_object`，超时/重定向/凭据都做限制；模型与 Key 由运营者在环境变量里配置。
+- **技术实现**：服务端 `server/src/assistant.mjs` 走 OpenAI 兼容的 `/chat/completions`，`response_format: json_object`，超时/重定向/凭据都做限制。
+- **配置入口**：模型地址、模型名与 API Key 由每个账号在「我的 → 助手设置」（`/assistant-settings`）里填写，账号配置优先；服务端 `COOK_AI_*` 环境变量作为默认与兜底。Key 用 AES-256-GCM 加密存入 `ai_config` 表，接口只回显 `sk-…abcd` 提示、不回传明文；保存前可「测试连接」，也可清除配置回落默认。
 
 ## 影响
 
