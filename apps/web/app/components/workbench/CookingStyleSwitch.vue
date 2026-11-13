@@ -4,7 +4,7 @@ import type { CookingStyle } from '~/composables/useCookingStyle'
 const props = defineProps<{ desktop?: boolean }>()
 const model = defineModel<CookingStyle>({ required: true })
 const pendingStyle = shallowRef<CookingStyle>()
-const currentLabel = computed(() => model.value === 'classic' ? '分组选择' : '并排浏览')
+const currentLabel = computed(() => model.value === 'classic' ? '分类' : '平铺')
 const select = useTemplateRef<{ $el: HTMLIonSelectElement }>('select')
 const desktopSwitch = useTemplateRef<HTMLElement>('desktopSwitch')
 
@@ -33,10 +33,10 @@ defineExpose({ focus })
 <template>
   <div v-if="desktop" ref="desktopSwitch" class="cooking-view-segment" role="group" aria-label="做菜视图">
     <button type="button" :aria-pressed="model === 'classic'" @click="model = 'classic'">
-      分组选择
+      分类
     </button>
     <button type="button" :aria-pressed="model === 'workbench'" @click="model = 'workbench'">
-      并排浏览
+      平铺
     </button>
   </div>
   <ion-select
@@ -54,10 +54,10 @@ defineExpose({ focus })
     @ion-dismiss="applySelection"
   >
     <ion-select-option value="classic">
-      分组选择
+      分类
     </ion-select-option>
     <ion-select-option value="workbench">
-      并排浏览
+      平铺
     </ion-select-option>
   </ion-select>
 </template>
