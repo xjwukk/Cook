@@ -29,6 +29,9 @@ const baseUrl = ref('https://api.deepseek.com/v1')
 const model = ref('deepseek-chat')
 const apiKey = ref('')
 const enabled = ref(true)
+const models = ref<string[]>([])
+const loadingModels = ref(false)
+const modelListError = ref('')
 
 const providerPresets = [
   { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
@@ -64,6 +67,41 @@ async function load(): Promise<void> {
 function applyPreset(preset: typeof providerPresets[number]): void {
   baseUrl.value = preset.baseUrl
   model.value = preset.model
+}
+
+async function fetchModels(): Promise<void> {
+  modelListError.value = ''
+  if (!baseUrl.value.trim()) {
+    modelListError.value = '请先填写服务地址'
+    return
+  }
+  if (!apiKey.value.trim() && !config.value?.keyHint) {
+    modelListError.value = '请先填写 API Key'
+    return
+  }
+  loadingModels.value = true
+  try {
+    const response = await fetch('/api/assistant/models', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ baseUrl: baseUrl.value.trim(), apiKey: apiKey.value.trim() }),
+    })
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok)
+      throw new Error(body?.error || `获取失败（${response.status}）`)
+    models.value = body.models ?? []
+    if (!models.value.includes(model.value) && models.value.length)
+      model.value = models.value[0]!
+    void yunleHaptic('success')
+  }
+  catch (error) {
+    models.value = []
+    modelListError.value = error instanceof Error ? error.message : '获取模型列表失败'
+  }
+  finally {
+    loadingModels.value = false
+  }
 }
 
 async function testConnection(): Promise<void> {
@@ -214,11 +252,7 @@ onMounted(load)
               <label class="settings-field">
                 <span>服务地址</span>
                 <input v-model="baseUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://api.deepseek.com/v1">
-              </label>
-
-              <label class="settings-field">
-                <span>模型名称</span>
-                <input v-model="model" type="text" autocomplete="off" placeholder="deepseek-chat">
+                <small class="settings-field-help">填 base URL 或完整的 /chat/completions 地址都可以。</small>
               </label>
 
               <label class="settings-field">
@@ -231,6 +265,41 @@ onMounted(load)
                   :placeholder="config?.keyHint ? `已保存 ${config.keyHint}，留空则不修改` : 'sk-...'"
                 >
               </label>
+
+              <div class="settings-field">
+                <span>模型</span>
+                <div class="settings-model-row">
+                  <input
+                    v-model="model"
+                    type="text"
+                    autocomplete="off"
+                    list="assistant-models"
+                    placeholder="deepseek-chat"
+                  >
+                  <button
+                    type="button"
+                    class="cook-btn cook-btn--secondary cook-btn--sm settings-model-fetch"
+                    :disabled="loadingModels"
+                    :aria-busy="loadingModels"
+                    @click="fetchModels"
+                  >
+                    <ion-spinner v-if="loadingModels" class="cook-btn__spinner" name="crescent" />
+                    <span class="cook-btn__label">{{ loadingModels ? '获取中' : '获取模型' }}</span>
+                  </button>
+                </div>
+                <datalist id="assistant-models">
+                  <option v-for="name in models" :key="name" :value="name" />
+                </datalist>
+                <p v-if="modelListError" class="settings-model-hint settings-model-error">
+                  {{ modelListError }}
+                </p>
+                <p v-else-if="models.length" class="settings-model-hint">
+                  已获取 {{ models.length }} 个模型，可从下拉里选，也可以手动填写。
+                </p>
+                <p v-else class="settings-model-hint">
+                  填好地址和 Key 后点「获取模型」，服务商不支持列表时可以直接手填。
+                </p>
+              </div>
 
               <label class="settings-toggle">
                 <input v-model="enabled" type="checkbox">
@@ -342,6 +411,28 @@ onMounted(load)
   border-color: var(--c-brand);
   outline: 2px solid color-mix(in srgb, var(--c-brand) 30%, transparent);
   outline-offset: 1px;
+}
+.settings-model-row {
+  display: flex;
+  gap: 8px;
+}
+.settings-model-row input {
+  flex: 1;
+  min-width: 0;
+}
+.settings-model-fetch {
+  flex: none;
+  min-height: 48px;
+}
+.settings-field-help,
+.settings-model-hint {
+  margin: 0;
+  color: var(--c-ink-3);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+.settings-model-error {
+  color: var(--c-alert);
 }
 .settings-toggle {
   display: flex;

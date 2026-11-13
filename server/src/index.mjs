@@ -5,6 +5,7 @@ import {
   AssistantError,
   buildAssistantMessages,
   callAssistantModel,
+  listAssistantModels,
   normalizeBaseUrl,
   normalizeModel,
   readAssistantConfig,
@@ -327,6 +328,31 @@ const routes = [
     }
     aiConfig.remove(user.id)
     sendJson(res, 204)
+  }],
+
+  // 拉取模型列表：地址与 Key 可以来自表单，也可以沿用已保存的 Key。
+  ['POST', /^\/api\/assistant\/models$/, async (req, res) => {
+    const user = currentUser(req)
+    if (!user) {
+      sendJson(res, 401, { error: '未登录' })
+      return
+    }
+    if (tooManyAttempts(`ai-models:${user.id}`)) {
+      sendJson(res, 429, { error: '请求太频繁，请稍后再试' })
+      return
+    }
+    recordAttempt(`ai-models:${user.id}`)
+
+    const body = await readJson(req)
+    const baseUrl = normalizeBaseUrl(body.baseUrl)
+    const existing = aiConfig.get(user.id)
+    const apiKey = String(body.apiKey ?? '').trim() || (existing ? decryptSecret(secretKey, existing.apiKeyCipher) : '')
+    if (!apiKey) {
+      sendJson(res, 400, { error: '请先填写 API Key' })
+      return
+    }
+    const models = await listAssistantModels({ baseUrl, apiKey, timeout: assistantConfig.timeout })
+    sendJson(res, 200, { models })
   }],
 
   // 保存前试连：用表单里的地址/模型/Key 发一条极小的请求。

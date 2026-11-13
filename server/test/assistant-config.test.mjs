@@ -46,6 +46,11 @@ function saveConfig(cookie, body) {
 
 before(async () => {
   model = createServer((req, res) => {
+    if (req.url.endsWith('/models')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ data: [{ id: 'mock-large' }, { id: 'mock-small' }, { id: 'mock-small' }] }))
+      return
+    }
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({
       choices: [{
@@ -196,5 +201,45 @@ describe('assistant per-user config', () => {
     assert.equal(removed.status, 204)
     const status = await (await fetch(`${base}/api/assistant/status`, { headers: { Cookie: cookie } })).json()
     assert.equal(status.source, 'server')
+  })
+})
+
+describe('assistant model discovery', () => {
+  it('lists models from the provider and de-duplicates them', async () => {
+    const cookie = await register('modeluser')
+    const response = await fetch(`${base}/api/assistant/models`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Cookie': cookie },
+      body: JSON.stringify({ baseUrl: `http://127.0.0.1:${modelPort}/v1`, apiKey: 'sk-model-12345678' }),
+    })
+    assert.equal(response.status, 200)
+    const body = await response.json()
+    assert.deepEqual(body.models, ['mock-large', 'mock-small'])
+  })
+
+  it('accepts a full chat/completions URL as the service address', async () => {
+    const cookie = await register('endpointuser')
+    const save = await saveConfig(cookie, {
+      baseUrl: `http://127.0.0.1:${modelPort}/v1/chat/completions`,
+      model: 'mock-small',
+      apiKey: 'sk-endpoint-12345678',
+    })
+    assert.equal(save.status, 200)
+
+    const body = await (await fetch(`${base}/api/assistant/config`, { headers: { Cookie: cookie } })).json()
+    assert.equal(body.baseUrl, `http://127.0.0.1:${modelPort}/v1`)
+
+    const chat = await post('/api/assistant/chat', { question: '随便', candidates: [{ id: 1 }] }, cookie)
+    assert.equal(chat.status, 200)
+  })
+
+  it('requires a key before listing models', async () => {
+    const cookie = await register('nokeyuser')
+    const response = await fetch(`${base}/api/assistant/models`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Cookie': cookie },
+      body: JSON.stringify({ baseUrl: `http://127.0.0.1:${modelPort}/v1` }),
+    })
+    assert.equal(response.status, 400)
   })
 })

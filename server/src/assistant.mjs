@@ -46,10 +46,19 @@ export function readAssistantConfig(env = process.env) {
 }
 
 /** 只允许 http/https；http 仅放行本机地址，避免把 Key 明文发到外网。 */
+/**
+ * 接受三种写法，都归一成「base URL」：
+ * - https://api.deepseek.com/v1
+ * - https://api.deepseek.com/v1/
+ * - https://api.deepseek.com/v1/chat/completions（完整 endpoint）
+ * 之后统一请求 `${base}/chat/completions` 与 `${base}/models`。
+ */
 export function normalizeBaseUrl(value) {
-  const text = String(value ?? '').trim().replace(/\/+$/, '')
+  let text = String(value ?? '').trim().replace(/\/+$/, '')
   if (!text)
     throw new AssistantError('INVALID_CONFIG', '请填写模型服务地址', 400)
+  if (/\/chat\/completions$/i.test(text))
+    text = text.replace(/\/chat\/completions$/i, '')
   let url
   try {
     url = new URL(text)
@@ -62,6 +71,52 @@ export function normalizeBaseUrl(value) {
   if (url.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
     throw new AssistantError('INVALID_CONFIG', '非本机地址必须使用 https', 400)
   return text
+}
+
+/** 拉取服务商提供的模型列表，供设置页下拉选择。 */
+export async function listAssistantModels({ baseUrl, apiKey, timeout = 15_000 }) {
+  let response
+  try {
+    response = await fetch(`${baseUrl}/models`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(Math.min(timeout, 15_000)),
+      redirect: 'error',
+      credentials: 'omit',
+      cache: 'no-store',
+    })
+  }
+  catch (error) {
+    if (error?.name === 'TimeoutError')
+      throw new AssistantError('MODEL_TIMEOUT', '获取模型列表超时', 504)
+    throw new AssistantError('SERVICE_UNAVAILABLE', '无法连接模型服务，请检查地址', 503)
+  }
+
+  if (response.status === 401 || response.status === 403)
+    throw new AssistantError('INVALID_CONFIG', 'API Key 无效或没有权限', 400)
+  if (response.status === 404)
+    throw new AssistantError('NO_MODEL_LIST', '该服务不提供模型列表，请手动填写模型名称', 404)
+  if (!response.ok)
+    throw new AssistantError('SERVICE_UNAVAILABLE', `获取模型列表失败（${response.status}）`, 503)
+
+  let body
+  try {
+    body = await response.json()
+  }
+  catch {
+    throw new AssistantError('NO_MODEL_LIST', '模型列表不是合法 JSON，请手动填写模型名称', 502)
+  }
+
+  const raw = Array.isArray(body?.data) ? body.data : Array.isArray(body?.models) ? body.models : []
+  const models = [...new Set(raw
+    .map(item => (typeof item === 'string' ? item : item?.id ?? item?.name))
+    .filter(item => typeof item === 'string' && item.trim())
+    .map(item => item.trim()))]
+    .sort((a, b) => a.localeCompare(b))
+    .slice(0, 200)
+
+  if (!models.length)
+    throw new AssistantError('NO_MODEL_LIST', '该服务没有返回可用模型，请手动填写模型名称', 404)
+  return models
 }
 
 export function normalizeModel(value) {
