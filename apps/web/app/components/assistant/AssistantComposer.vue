@@ -30,7 +30,7 @@ function submit(): void {
         v-model="text"
         class="assistant-composer-input"
         :disabled="disabled"
-        :placeholder="disabled ? (hint || '暂时无法提问') : (placeholder || '问点什么，比如：家里有土豆和猪肉能做什么')"
+        :placeholder="disabled ? (hint || '暂时无法提问') : (placeholder || '问点什么')"
         rows="1"
         enterkeyhint="send"
         aria-label="向料理助手提问"

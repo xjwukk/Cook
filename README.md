@@ -10,6 +10,14 @@
 
 界面与内容为中文。菜谱数据源自上游项目与 [HowToCook](https://github.com/Anduin2017/HowToCook)（Unlicense）。
 
+## 界面预览
+
+<p align="center">
+  <img src="./docs/public/readme/preview.webp" alt="做菜、菜谱库与菜谱详情界面预览" width="100%" />
+</p>
+
+<p align="center"><sub>做菜 · 菜谱库 · 菜谱详情</sub></p>
+
 ## 功能
 
 - **按食材找菜**：选择食材、厨具、做法、难度、忌口，实时给出能做的菜，并提示「再补一样能多解锁几道」
