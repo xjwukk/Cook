@@ -22,11 +22,13 @@ import {
 import {
   createAiConfigRepository,
   createAiUsageRepository,
+  createRecipeOverrideRepository,
   createSessionRepository,
   createUserDataRepository,
   createUserRepository,
   openDatabase,
 } from './db.mjs'
+import { pickRecipeOverride, validateRecipeOverride } from './recipe-override.mjs'
 import { decryptSecret, encryptSecret, loadSecret } from './secret.mjs'
 import { isValidUserData } from './user-data.mjs'
 
@@ -50,6 +52,7 @@ const sessions = createSessionRepository(db)
 const userData = createUserDataRepository(db)
 const aiUsage = createAiUsageRepository(db)
 const aiConfig = createAiConfigRepository(db)
+const recipeOverrides = createRecipeOverrideRepository(db)
 const secretKey = loadSecret({ dbPath: DB_PATH })
 
 // 料理助手：模型由运营者在服务端配置，Key 只存在服务器上。
@@ -254,6 +257,14 @@ function endSession(req, res) {
 const routes = [
   ['GET', /^\/api\/health$/, async (req, res) => {
     sendJson(res, 200, { ok: true, users: users.count() })
+  }],
+
+  // 官方菜谱修订：免登录，所有访客看到同一份覆盖层。
+  ['GET', /^\/api\/recipes\/overrides$/, async (req, res) => {
+    sendJson(res, 200, {
+      version: recipeOverrides.version(),
+      overrides: recipeOverrides.list().map(row => pickRecipeOverride(row.data)),
+    })
   }],
 
   // 助手状态：免登录。登录后额外返回该账号自己的配置是否可用。
@@ -503,6 +514,42 @@ const routes = [
     if (!requireAdmin(req, res))
       return
     sendJson(res, 200, { users: users.list() })
+  }],
+
+  ['GET', /^\/api\/admin\/recipes$/, async (req, res) => {
+    if (!requireAdmin(req, res))
+      return
+    sendJson(res, 200, { overrides: recipeOverrides.list() })
+  }],
+
+  ['PUT', /^\/api\/admin\/recipes\/(\d+)$/, async (req, res, match) => {
+    const admin = requireAdmin(req, res)
+    if (!admin)
+      return
+    const id = Number(match[1])
+    const body = await readJson(req)
+    const result = validateRecipeOverride(body, id)
+    if (result.error) {
+      sendJson(res, 400, { error: result.error })
+      return
+    }
+    const saved = recipeOverrides.put(id, result.data, admin.id)
+    sendJson(res, 200, {
+      override: {
+        id,
+        data: result.data,
+        updatedAt: saved.updatedAt,
+        updatedBy: admin.id,
+        updatedByName: admin.username,
+      },
+    })
+  }],
+
+  ['DELETE', /^\/api\/admin\/recipes\/(\d+)$/, async (req, res, match) => {
+    if (!requireAdmin(req, res))
+      return
+    recipeOverrides.remove(Number(match[1]))
+    sendJson(res, 204)
   }],
 
   ['DELETE', /^\/api\/admin\/users\/(\d+)$/, async (req, res, match) => {

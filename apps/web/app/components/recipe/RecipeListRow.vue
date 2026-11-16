@@ -1,8 +1,6 @@
 <script lang="ts" setup>
 import type { DbRecipeItem } from '~/utils/db'
 import { isFavorited, toggleFavorite } from '~/composables/store/favorite'
-import { addRecipeHistory } from '~/composables/store/history'
-import { openRecipe } from '~/utils/recipe'
 import { yunleHaptic } from '~/utils/yunleHost'
 
 /**
@@ -14,14 +12,14 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   toggled: [favorited: boolean]
+  select: [dish: DbRecipeItem]
 }>()
 
 const sliding = ref<{ $el: HTMLIonItemSlidingElement }>()
 const favorited = computed(() => isFavorited(props.dish))
 
 function open() {
-  addRecipeHistory(props.dish)
-  openRecipe(props.dish)
+  emit('select', props.dish)
 }
 
 function toggle() {

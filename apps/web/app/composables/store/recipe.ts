@@ -8,6 +8,7 @@ import { acceptHMRUpdate, defineStore } from 'pinia'
 import { computed, onMounted, ref, shallowRef } from 'vue'
 import { useIndexedDB } from '~/composables/db'
 import { usePersonalCatalog } from '~/composables/usePersonalCatalog'
+import { applyRecipeOverrides } from '~/composables/useRecipeOverrides'
 import { defaultPantry, pantryOptions } from '~/data/pantry'
 import { trackCookEvent } from '~/utils/analytics'
 import { canCookWithKitchen } from '~/utils/kitchenMatch'
@@ -152,7 +153,9 @@ export const useRecipeStore = defineStore('recipe', () => {
     curMode.value = mode
   }
 
-  const recipes = shallowRef<RecipeItem[]>([])
+  // IndexedDB 里的官方版本不动；列表对外始终是叠加管理员修订后的结果
+  const baseRecipes = shallowRef<RecipeItem[]>([])
+  const recipes = computed(() => applyRecipeOverrides(baseRecipes.value))
   const isSearching = shallowRef(true)
   const loadError = shallowRef('')
   const reviewedCatalog = shallowRef<ReviewedRecipeCatalog | null>(null)
@@ -170,7 +173,7 @@ export const useRecipeStore = defineStore('recipe', () => {
       try {
         // Await initialization so first visits and saved selections cannot read an empty DB.
         await indexedDB.init()
-        recipes.value = await db.recipes.toArray()
+        baseRecipes.value = await db.recipes.toArray()
       }
       catch {
         loadError.value = '菜谱暂时没有加载成功，请重试。'

@@ -2,11 +2,11 @@ import type { SearchOptions } from '../utils/search.js'
 import fs from 'node:fs'
 import consola from 'consola'
 import { colors } from 'consola/utils'
+import { parseIncompatibleFoodsCsv, parseRecipeCsv } from '../utils/csv.js'
 import {
   incompatibleFoodsCsvFile,
   recipeCsvFile,
-} from '../utils/config.js'
-import { parseIncompatibleFoodsCsv, parseRecipeCsv } from '../utils/csv.js'
+} from '../utils/paths.js'
 import { searchRecipes } from '../utils/search.js'
 
 export type { SearchOptions }

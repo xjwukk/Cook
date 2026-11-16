@@ -5,6 +5,7 @@ import { favoriteEntries } from '~/composables/store/favorite'
 import { recipeHistories } from '~/composables/store/history'
 import { useKitchenStore } from '~/composables/store/kitchen'
 import { useRecipeStore } from '~/composables/store/recipe'
+import { applyRecipeOverrides } from '~/composables/useRecipeOverrides'
 import { trackCookEvent } from '~/utils/analytics'
 import { db } from '~/utils/db'
 
@@ -130,7 +131,7 @@ export const useAssistant = createSharedComposable(() => {
     if (!favoriteEntries.value.length)
       return []
     const ids = new Set(favoriteEntries.value.map(entry => entry.id))
-    const recipes = await db.recipes.toArray()
+    const recipes = applyRecipeOverrides(await db.recipes.toArray())
     return recipes.filter(recipe => recipe.id != null && ids.has(recipe.id)).map(recipe => recipe.name).slice(0, 30)
   }
 

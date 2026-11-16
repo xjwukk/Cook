@@ -1,3 +1,4 @@
+import { refreshRecipeOverrides } from '~/composables/useRecipeOverrides'
 import { storageUid } from '~/utils/storageScope'
 
 /**
@@ -7,7 +8,8 @@ import { storageUid } from '~/utils/storageScope'
  */
 export default defineNuxtPlugin(async () => {
   const account = useAccount()
-  await account.refresh()
+  // 官方菜谱修订是全局的，和登录状态无关，越早拿到越好。
+  await Promise.all([account.refresh(), refreshRecipeOverrides()])
 
   const uid = account.user.value?.id
   if (uid && storageUid !== String(uid)) {

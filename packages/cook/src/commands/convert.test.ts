@@ -16,6 +16,9 @@ vi.mock('../utils/config.js', async importOriginal => ({
   CHUNK_SIZE: 500,
   CHUNK_THRESHOLD: 1000,
   DATA_SCHEMA_VERSION: 1,
+}))
+vi.mock('../utils/paths.js', async importOriginal => ({
+  ...await importOriginal<typeof import('../utils/paths.js')>(),
   incompatibleFoodsCsvFile: '/fixture/rules.csv',
   incompatibleFoodsJsonFile: '/fixture/rules.json',
   recipeCsvFile: '/fixture/recipes.csv',

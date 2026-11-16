@@ -2,6 +2,7 @@
 import type { IonSearchbarCustomEvent, SearchbarInputEventDetail } from '@ionic/core'
 import type { DbRecipeItem } from '~/utils/db'
 import { getFavoriteTime, isFavorited, toggleFavorite } from '~/composables/store/favorite'
+import { applyRecipeOverrides } from '~/composables/useRecipeOverrides'
 import { db } from '~/utils/db'
 import { confirmDestructive } from '~/utils/dialog'
 import { openRecipe } from '~/utils/recipe'
@@ -13,7 +14,8 @@ definePageMeta({
 })
 
 const loading = ref(true)
-const allRecipes = shallowRef<DbRecipeItem[]>([])
+const baseRecipes = shallowRef<DbRecipeItem[]>([])
+const allRecipes = computed(() => applyRecipeOverrides(baseRecipes.value))
 const recipes = computed(() => allRecipes.value.filter(r => isFavorited(r)))
 const keyword = ref('')
 const sortKey = ref<'time' | 'name'>('time')
@@ -37,8 +39,7 @@ const displayed = computed(() => {
 
 async function loadFavorites() {
   try {
-    const all = await db.recipes.toArray()
-    allRecipes.value = all
+    baseRecipes.value = await db.recipes.toArray()
   }
   finally {
     loading.value = false

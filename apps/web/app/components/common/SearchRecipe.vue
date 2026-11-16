@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot } from '@headlessui/vue'
 
+import { applyRecipeOverrides } from '~/composables/useRecipeOverrides'
 import { db } from '~/utils/db'
 
 const isOpen = ref(false)
@@ -14,9 +15,8 @@ function openModal() {
 
 const keyword = ref('')
 async function getFilterRecipes(keyword: string) {
-  return db.recipes.filter((recipe) => {
-    return recipe.name.includes(keyword)
-  }).toArray()
+  const recipes = applyRecipeOverrides(await db.recipes.toArray())
+  return recipes.filter(recipe => recipe.name.includes(keyword))
 }
 const filteredRecipes = computedAsync(async () => {
   return await getFilterRecipes(keyword.value)

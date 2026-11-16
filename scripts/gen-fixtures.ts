@@ -4,8 +4,8 @@
  * 菜谱数据、别名或推荐逻辑变化后运行 pnpm fixtures，并在 PR 里看结果的变化是否符合预期。
  */
 import fs from 'node:fs'
-import { incompatibleFoodsCsvFile, recipeCsvFile } from '../packages/cook/src/utils/config'
 import { parseIncompatibleFoodsCsv, parseRecipeCsv } from '../packages/cook/src/utils/csv'
+import { incompatibleFoodsCsvFile, recipeCsvFile } from '../packages/cook/src/utils/paths'
 import { applyRecipeScores } from '../packages/cook/src/utils/score'
 import { readVideoStats } from '../packages/cook/src/utils/video-stats'
 import { buildFixtures } from './lib/fixtures'

@@ -4,7 +4,7 @@ import process from 'node:process'
 import cac from 'cac'
 import { version } from '../package.json'
 import { runConvert } from './commands/convert'
-import { envFile } from './utils/config'
+import { envFile } from './utils/paths'
 
 const LINE_BREAK_RE = /\r?\n/
 

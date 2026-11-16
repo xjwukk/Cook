@@ -2,6 +2,7 @@
 import type { RecipeHistoryItem } from '~/composables/store/history'
 import dayjs from 'dayjs'
 import { clearRecipeHistories, recipeHistories, removeRecipeHistory } from '~/composables/store/history'
+import { applyRecipeOverrides } from '~/composables/useRecipeOverrides'
 import { confirmDestructive } from '~/utils/dialog'
 import { openRecipe } from '~/utils/recipe'
 import { yunleHaptic } from '~/utils/yunleHost'
@@ -17,7 +18,10 @@ definePageMeta({
 const sections = computed(() => {
   const today = dayjs().startOf('day')
   const groups: { label: string, items: RecipeHistoryItem[] }[] = []
-  const sorted = [...recipeHistories.value].sort((a, b) => b.time - a.time)
+  // 历史里存的是打开当时的整份菜谱；显示时叠上管理员后来的修订
+  const sorted = [...recipeHistories.value]
+    .sort((a, b) => b.time - a.time)
+    .map(history => ({ ...history, recipe: applyRecipeOverrides([history.recipe])[0] ?? history.recipe }))
   for (const history of sorted) {
     const day = dayjs(history.time).startOf('day')
     const diff = today.diff(day, 'day')

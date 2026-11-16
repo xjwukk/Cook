@@ -10,5 +10,7 @@ export type { CookQuery } from './utils/query'
 export { DIFFICULTY_LEVELS, hasAvoidedStuff, matchesTaste, METHOD_GROUPS, recommendRecipes, SPICY_TAG, uniqueStuff } from './utils/recommend'
 export type { RecipeMatch, RecommendationMode, RecommendationOptions } from './utils/recommend'
 export { searchRecipes } from './utils/search'
-
 export type { SearchOptions, SearchResult, SearchResultItem } from './utils/search'
+
+export { DIFFICULTIES, validateRecipes } from './utils/validate'
+export type { RecipeDictionary, ValidateOptions, ValidateResult } from './utils/validate'

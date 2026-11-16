@@ -1,12 +1,7 @@
 import type { RecipeItem } from '../types/index.js'
 import fs from 'node:fs'
 import consola from 'consola'
-import {
-  FEISHU_RECIPE_HEADERS,
-  recipeCsvFile,
-  recipeJsonFile,
-  SEP,
-} from '../utils/config.js'
+import { FEISHU_RECIPE_HEADERS, SEP } from '../utils/config.js'
 import { assignRecipeIds, cleanBv, parseRecipeCsv, recipesToCsv } from '../utils/csv.js'
 import {
   createFeishuClient,
@@ -14,6 +9,7 @@ import {
   getSpreadsheetToken,
   readSpreadsheetValues,
 } from '../utils/feishu.js'
+import { recipeCsvFile, recipeJsonFile } from '../utils/paths.js'
 
 /**
  * 安全获取单元格值，处理 null / undefined

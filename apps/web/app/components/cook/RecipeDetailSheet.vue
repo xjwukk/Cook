@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { RecipeMatch } from '@yunyoujun/cook'
+import type { RecipeMatch, RecipeTextBlock } from '@yunyoujun/cook'
 import type { RecipeItem } from '~/types'
 import { uniqueStuff } from '@yunyoujun/cook/recommend'
 import { isFavorited, toggleFavorite } from '~/composables/store/favorite'
@@ -22,11 +22,13 @@ const open = defineModel<boolean>('open', { required: true })
 
 const stuff = computed(() => props.recipe ? uniqueStuff(props.recipe.stuff) : [])
 const thumb = computed(() => props.recipe?.tags?.includes('杂烩') ? '🍲' : getEmojisFromStuff(stuff.value)[0] ?? '🍽️')
+const tools = computed(() => props.recipe?.tools ?? [])
 const meta = computed(() => {
   if (!props.recipe)
     return ''
-  const tools = props.recipe.tools?.map(tool => tool === '一口大锅' ? '炒锅' : tool).join(' / ') || '厨具未记录'
-  return props.recipe.difficulty ? `${tools} · ${props.recipe.difficulty}` : tools
+  const tags = props.recipe.tags?.slice(0, 3).join(' · ') ?? ''
+  const difficulty = props.recipe.difficulty ?? ''
+  return [tags, difficulty].filter(Boolean).join(' · ')
 })
 const groups = computed(() => {
   const match = props.match
@@ -38,6 +40,48 @@ const groups = computed(() => {
     { label: '常备调料', items: match.pantryStuff, tone: 'neutral' },
     { label: '还能加', items: match.optionalStuff, tone: 'neutral' },
   ].filter(group => group.items.length)
+})
+
+/** 文字步骤：官方菜谱取 recipe-text.json 的「操作」，自建菜谱用备注 */
+interface StepBlock {
+  type: 'paragraph' | 'ordered' | 'unordered'
+  text?: string
+  items?: string[]
+}
+
+const rawSteps = shallowRef<RecipeTextBlock[]>([])
+const stepsLoading = ref(false)
+let stepRequest = 0
+
+watch(() => props.recipe?.id, async (id) => {
+  const request = ++stepRequest
+  rawSteps.value = []
+  if (typeof id !== 'number') {
+    stepsLoading.value = false
+    return
+  }
+  stepsLoading.value = true
+  try {
+    await loadRecipeTexts()
+    if (request !== stepRequest)
+      return
+    rawSteps.value = extractRecipeSteps(findRecipeText(id))
+  }
+  finally {
+    if (request === stepRequest)
+      stepsLoading.value = false
+  }
+}, { immediate: true })
+
+const steps = computed<StepBlock[]>(() => {
+  const result: StepBlock[] = []
+  for (const block of rawSteps.value) {
+    if (block.type === 'paragraph')
+      result.push({ type: 'paragraph', text: block.text })
+    else if (block.type === 'list')
+      result.push({ type: block.ordered ? 'ordered' : 'unordered', items: block.items })
+  }
+  return result
 })
 
 const custom = computed(() => props.recipe && isCustomRecipe(props.recipe) ? props.recipe : undefined)
@@ -114,9 +158,10 @@ function onPresented() {
 </script>
 
 <template>
-  <ion-modal :is-open="open" :breakpoints="[0, 0.62, 1]" :initial-breakpoint="0.62" @did-present="onPresented" @did-dismiss="open = false">
+  <ion-modal class="recipe-detail-modal" :is-open="open" @did-present="onPresented" @did-dismiss="open = false">
     <ion-header>
       <ion-toolbar>
+        <ion-title>菜谱详情</ion-title>
         <ion-buttons slot="end">
           <ion-button :strong="true" @click="open = false">
             完成
@@ -126,9 +171,13 @@ function onPresented() {
     </ion-header>
     <ion-content v-if="recipe">
       <div class="recipe-detail-hero">
-        <span class="recipe-detail-thumb" aria-hidden="true">{{ thumb }}</span>
-        <h2>{{ recipe.name }}</h2>
-        <p>{{ meta }}</p>
+        <div class="recipe-detail-heading">
+          <span class="recipe-detail-thumb" aria-hidden="true">{{ thumb }}</span>
+          <h2>{{ recipe.name }}</h2>
+        </div>
+        <p v-if="meta">
+          {{ meta }}
+        </p>
       </div>
 
       <div class="recipe-detail-actions">
@@ -163,22 +212,64 @@ function onPresented() {
 
       <RecipeReviewSection :recipe="recipe" />
 
-      <section v-for="group in groups" :key="group.label" :aria-label="group.label">
-        <h3 class="cook-group-header">
-          {{ group.label }} · {{ group.items.length }} 种
-        </h3>
-        <div class="recipe-detail-chips">
-          <span v-for="name in group.items" :key="name" class="recipe-detail-chip" :class="`is-${group.tone}`">{{ name }}</span>
+      <section class="recipe-detail-facts" aria-label="食材与厨具">
+        <div v-for="group in groups" :key="group.label" class="recipe-detail-fact-row">
+          <span class="recipe-detail-fact-label">{{ group.label }}</span>
+          <div class="recipe-detail-fact-values">
+            <span v-for="name in group.items" :key="name" class="recipe-detail-chip" :class="`is-${group.tone}`">{{ name }}</span>
+          </div>
+        </div>
+        <div v-if="tools.length" class="recipe-detail-fact-row">
+          <span class="recipe-detail-fact-label">厨具</span>
+          <div class="recipe-detail-fact-values">
+            <span v-for="tool in tools" :key="tool" class="recipe-detail-chip is-neutral">{{ tool === '一口大锅' ? '炒锅' : tool }}</span>
+          </div>
         </div>
       </section>
 
-      <section v-if="custom?.note" aria-label="做法备注">
-        <h3 class="cook-group-header">
-          做法备注
+      <section aria-label="步骤">
+        <h3 class="recipe-detail-steps-title">
+          步骤
         </h3>
-        <p class="recipe-detail-text">
-          {{ custom.note }}
+        <div v-if="custom?.note || steps.length || stepsLoading" class="recipe-detail-steps">
+          <p v-if="stepsLoading" class="recipe-detail-step-loading">
+            正在加载文字步骤…
+          </p>
+          <p v-else-if="custom?.note" class="recipe-detail-step-paragraph">
+            {{ custom.note }}
+          </p>
+          <template v-for="(step, index) in steps" :key="index">
+            <p v-if="step.type === 'paragraph'" class="recipe-detail-step-paragraph">
+              <RecipeInlineText :text="step.text ?? ''" />
+            </p>
+            <ol v-else-if="step.type === 'ordered'" class="recipe-detail-step-list">
+              <li v-for="(item, itemIndex) in step.items" :key="itemIndex">
+                <RecipeInlineText :text="item" />
+              </li>
+            </ol>
+            <ul v-else class="recipe-detail-step-list">
+              <li v-for="(item, itemIndex) in step.items" :key="itemIndex">
+                <RecipeInlineText :text="item" />
+              </li>
+            </ul>
+          </template>
+        </div>
+        <p v-else class="recipe-detail-empty">
+          这道菜还没有录入文字步骤，可以直接查看视频或图文做法。
         </p>
+      </section>
+
+      <section v-if="link" aria-label="视频链接">
+        <h3 class="cook-group-header">
+          {{ videoLink ? '视频链接' : '做法链接' }}
+        </h3>
+        <a
+          class="recipe-detail-link"
+          :href="link"
+          target="_blank"
+          rel="noopener noreferrer"
+          @click.prevent="openPrimary"
+        >{{ link }}</a>
       </section>
 
       <p class="cook-group-footer recipe-detail-note">
@@ -194,38 +285,128 @@ function onPresented() {
 </template>
 
 <style scoped>
-.recipe-detail-text {
+.recipe-detail-modal {
+  --width: min(760px, calc(100vw - 48px));
+  --height: min(88vh, 900px);
+  --border-radius: 20px;
+  --backdrop-opacity: 0.45;
+  --box-shadow: 0 24px 80px rgba(0, 0, 0, 0.24);
+}
+@media (max-width: 767px) {
+  .recipe-detail-modal {
+    --width: calc(100vw - 24px);
+    --height: calc(100vh - 48px);
+    --border-radius: 16px;
+  }
+}
+.recipe-detail-steps-title {
+  margin: 22px 16px 8px;
+  color: var(--c-ink);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.recipe-detail-steps-title::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 16px;
+  margin-inline-end: 8px;
+  border-radius: 2px;
+  background: var(--c-brand);
+  vertical-align: -2px;
+}
+.recipe-detail-steps {
+  margin: 0 16px;
+  padding: 16px 20px;
+  border-radius: 10px;
+  background: var(--ion-item-background, #fff);
+  font-size: 16px;
+  line-height: 1.8;
+}
+.recipe-detail-step-paragraph {
+  margin: 0 0 12px;
+  white-space: pre-wrap;
+}
+.recipe-detail-step-paragraph:last-child {
+  margin-bottom: 0;
+}
+.recipe-detail-step-list {
+  margin: 0 0 12px;
+  padding-inline-start: 22px;
+}
+.recipe-detail-step-list:last-child {
+  margin-bottom: 0;
+}
+.recipe-detail-step-list li {
+  margin-block: 8px;
+  white-space: pre-wrap;
+}
+.recipe-detail-step-list li::marker {
+  color: var(--c-brand);
+  font-weight: 600;
+}
+.recipe-detail-step-loading {
+  margin: 0;
+  color: var(--c-ink-3);
+  font-size: var(--fs-sm);
+}
+.recipe-detail-empty {
+  margin: 0 16px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--ion-item-background, #fff);
+  color: var(--c-ink-3);
+  font-size: var(--fs-sm);
+  line-height: 1.7;
+}
+.recipe-detail-link {
+  display: block;
   margin: 0 16px;
   padding: 12px 16px;
   border-radius: 10px;
   background: var(--ion-item-background, #fff);
-  font-size: 16px;
-  line-height: 22px;
-  white-space: pre-wrap;
+  color: var(--c-brand-ink);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .recipe-detail-hero {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 4px;
   padding: 4px 24px 0;
   text-align: center;
+}
+.recipe-detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-width: 0;
 }
 .recipe-detail-thumb {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 72px;
-  height: 72px;
-  border-radius: 18px;
+  width: 52px;
+  height: 52px;
+  flex: none;
+  border-radius: 14px;
   background: var(--ion-item-background, #fff);
-  font-size: 40px;
+  font-size: 30px;
   animation: recipe-detail-pop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .recipe-detail-hero h2 {
-  margin: 12px 0 4px;
+  min-width: 0;
+  margin: 0;
   font-size: 22px;
   font-weight: 700;
-  line-height: 28px;
+  line-height: 30px;
+  overflow-wrap: anywhere;
 }
 .recipe-detail-hero p {
   margin: 0;
@@ -264,22 +445,41 @@ function onPresented() {
   --border-color: var(--c-rule);
   min-height: 44px;
 }
-.recipe-detail-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0 16px;
-  padding: 12px;
+.recipe-detail-facts {
+  margin: 12px 16px 0;
+  padding: 4px 14px;
   border-radius: 10px;
   background: var(--ion-item-background, #fff);
+}
+.recipe-detail-fact-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 7px 0;
+}
+.recipe-detail-fact-row + .recipe-detail-fact-row {
+  border-top: 1px solid var(--c-rule);
+}
+.recipe-detail-fact-label {
+  flex: none;
+  width: 42px;
+  padding-top: 3px;
+  color: var(--c-ink-3);
+  font-size: 13px;
+}
+.recipe-detail-fact-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
 }
 .recipe-detail-chip {
   display: inline-flex;
   align-items: center;
-  height: 30px;
-  padding: 0 12px;
-  border-radius: 15px;
-  font-size: 15px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 13px;
+  font-size: 14px;
 }
 .recipe-detail-chip.is-have {
   background: var(--c-brand-wash);

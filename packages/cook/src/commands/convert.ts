@@ -3,10 +3,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 import consola from 'consola'
+import { CHUNK_SIZE, CHUNK_THRESHOLD, DATA_SCHEMA_VERSION } from '../utils/config.js'
+import { parseIncompatibleFoodsCsv, parseRecipeCsv } from '../utils/csv.js'
 import {
-  CHUNK_SIZE,
-  CHUNK_THRESHOLD,
-  DATA_SCHEMA_VERSION,
   incompatibleFoodsCsvFile,
   incompatibleFoodsJsonFile,
   recipeCsvFile,
@@ -14,8 +13,7 @@ import {
   recipeMetaJsonFile,
   rootDir,
   sharedDataFiles,
-} from '../utils/config.js'
-import { parseIncompatibleFoodsCsv, parseRecipeCsv } from '../utils/csv.js'
+} from '../utils/paths.js'
 import { applyRecipeScores } from '../utils/score.js'
 import { readVideoStats } from '../utils/video-stats.js'
 

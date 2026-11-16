@@ -5,8 +5,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 import { parseArgs } from 'node:util'
-import { recipeCsvFile, rootDir } from '../packages/cook/src/utils/config'
 import { parseRecipeCsv } from '../packages/cook/src/utils/csv'
+import { recipeCsvFile, rootDir } from '../packages/cook/src/utils/paths'
 import { auditVideos, changedVideoIds, renderVideoReport, selectVideoIds } from './lib/video-check'
 
 const { values } = parseArgs({ options: {

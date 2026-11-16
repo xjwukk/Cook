@@ -90,6 +90,7 @@ export default defineConfig(withYunlefun({
             { text: '文档站部署', link: '/dev/docs-site' },
             { text: 'Docker 部署', link: '/dev/docker' },
             { text: '菜谱数据', link: '/dev/data' },
+            { text: '全量菜谱管理与修改', link: '/dev/recipe-admin' },
             { text: '私人菜谱与文件迁移', link: '/dev/private-recipes' },
             { text: '食材模型展柜', link: '/dev/ingredient-models' },
             { text: '设计系统', link: '/dev/design-system' },

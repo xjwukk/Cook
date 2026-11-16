@@ -6,6 +6,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 import { useIndexedDB } from '~/composables/db'
 import { favoriteRecipeIds } from '~/composables/store/favorite'
 import { useKitchenStore } from '~/composables/store/kitchen'
+import { applyRecipeOverrides } from '~/composables/useRecipeOverrides'
 import { cookDocumentHead, publicPages } from '~/constants'
 import { db } from '~/utils/db'
 import { canCookWithKitchen } from '~/utils/kitchenMatch'
@@ -22,8 +23,16 @@ const keyword = ref('')
 const kitchen = useKitchenStore()
 const onlyOwned = useStorage(scopedKey('library-only-owned'), false)
 const loading = ref(true)
-const recipes = shallowRef<DbRecipeItem[]>([])
+const baseRecipes = shallowRef<DbRecipeItem[]>([])
+const recipes = computed(() => applyRecipeOverrides(baseRecipes.value))
 const view = ref<'all' | 'fav'>('all')
+const detail = shallowRef<DbRecipeItem>()
+const detailOpen = ref(false)
+
+function openDetail(dish: DbRecipeItem) {
+  detail.value = dish
+  detailOpen.value = true
+}
 
 const favoriteIdSet = computed(() => new Set(favoriteRecipeIds.value))
 const isFav = (r: DbRecipeItem) => r.id != null && favoriteIdSet.value.has(r.id)
@@ -42,7 +51,7 @@ const toastMessage = ref('')
 onMounted(async () => {
   try {
     await useIndexedDB().init()
-    recipes.value = await db.recipes.toArray()
+    baseRecipes.value = await db.recipes.toArray()
   }
   finally {
     loading.value = false
@@ -175,6 +184,7 @@ onBeforeUnmount(() => cancelIdle(idleHandle))
             :key="dish.id ?? dish.name"
             class="library-row"
             :dish="dish"
+            @select="openDetail"
             @toggled="onToggled"
           />
         </div>
@@ -186,6 +196,7 @@ onBeforeUnmount(() => cancelIdle(idleHandle))
         <p>{{ onlyOwned ? '调整厨房库存、取消其他筛选或关闭库存筛选试试' : keyword ? '换个关键词试试' : '左滑菜谱或点星标即可收藏' }}</p>
       </div>
     </ion-content>
+    <RecipeDetailSheet v-if="detail" v-model:open="detailOpen" :recipe="detail" />
     <ion-toast
       :is-open="showToast"
       :message="toastMessage"

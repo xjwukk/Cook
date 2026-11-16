@@ -119,6 +119,13 @@ function handleSyncClick(): void {
             {{ customRecipes.length }}
           </ion-note>
         </ion-item>
+        <ion-item v-if="user?.role === 'admin'" router-link="/admin/recipes" :detail="true">
+          <CookListIcon slot="start" :icon="ioniconsLibraryOutline" color="#7a5ea3" />
+          <ion-label>
+            <h2>全量菜谱</h2>
+            <p>浏览与修改收录的 887 道菜谱</p>
+          </ion-label>
+        </ion-item>
       </ion-list>
 
       <ion-list :inset="true">

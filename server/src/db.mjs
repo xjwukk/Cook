@@ -55,6 +55,13 @@ export function openDatabase(file) {
       enabled INTEGER NOT NULL DEFAULT 1,
       updated_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS recipe_overrides (
+      recipe_id INTEGER PRIMARY KEY,
+      data TEXT NOT NULL,
+      updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      updated_at INTEGER NOT NULL
+    );
   `)
 
   // 旧库升级：users 表没有 role 列时补上，已有账号默认是普通用户。
@@ -180,6 +187,64 @@ export function createAiUsageRepository(db) {
     /** 清掉两天前的记录 */
     cleanup(now = Date.now()) {
       db.prepare('DELETE FROM ai_usage WHERE day < ?').run(dayKey(now - 2 * 24 * 60 * 60 * 1000))
+    },
+  }
+}
+
+/**
+ * 官方菜谱覆盖层：整份 RecipeItem 存成 JSON，按 recipe.csv 的 id 覆盖。
+ * 回滚就是删掉这一行，所以不存差异。
+ */
+export function createRecipeOverrideRepository(db) {
+  const rowToRecord = (row) => {
+    if (!row)
+      return null
+    return {
+      id: row.recipeId,
+      data: JSON.parse(row.data),
+      updatedAt: row.updatedAt,
+      updatedBy: row.updatedBy ?? null,
+      updatedByName: row.updatedByName ?? null,
+    }
+  }
+
+  return {
+    list() {
+      return db.prepare(`
+        SELECT o.recipe_id AS recipeId, o.data, o.updated_at AS updatedAt,
+               o.updated_by AS updatedBy, u.username AS updatedByName
+        FROM recipe_overrides o
+        LEFT JOIN users u ON u.id = o.updated_by
+        ORDER BY o.recipe_id
+      `).all().map(rowToRecord)
+    },
+    get(id) {
+      return rowToRecord(db.prepare(`
+        SELECT o.recipe_id AS recipeId, o.data, o.updated_at AS updatedAt,
+               o.updated_by AS updatedBy, u.username AS updatedByName
+        FROM recipe_overrides o
+        LEFT JOIN users u ON u.id = o.updated_by
+        WHERE o.recipe_id = ?
+      `).get(id))
+    },
+    put(id, data, userId) {
+      const now = Date.now()
+      db.prepare(`
+        INSERT INTO recipe_overrides (recipe_id, data, updated_by, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(recipe_id) DO UPDATE SET
+          data = excluded.data,
+          updated_by = excluded.updated_by,
+          updated_at = excluded.updated_at
+      `).run(id, JSON.stringify(data), userId, now)
+      return { updatedAt: now }
+    },
+    remove(id) {
+      return db.prepare('DELETE FROM recipe_overrides WHERE recipe_id = ?').run(id).changes > 0
+    },
+    /** 覆盖层版本号：最后修改时间；没有覆盖时是 0 */
+    version() {
+      return db.prepare('SELECT MAX(updated_at) AS version FROM recipe_overrides').get()?.version ?? 0
     },
   }
 }
