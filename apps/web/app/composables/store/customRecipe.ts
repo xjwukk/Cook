@@ -1,6 +1,5 @@
 import type { CustomRecipe } from '~/utils/customRecipe'
 import { useStorage } from '@vueuse/core'
-import { namespace } from '~/constants'
 import { updatePrivateRecipeStorage } from '~/utils/privateRecipeStorage'
 import { scopedKey } from '~/utils/storageScope'
 
@@ -11,7 +10,8 @@ export const customRecipes = useStorage<CustomRecipe[]>(scopedKey('custom-recipe
 
 /** Read current storage at commit time so another tab's additions are preserved. */
 export function updateCustomRecipes(update: (current: CustomRecipe[]) => CustomRecipe[]) {
-  const recipes = updatePrivateRecipeStorage(localStorage, `${namespace}:custom-recipes`, update)
+  // 写入必须和读取用同一个 key，否则登录状态下会把菜谱落到匿名空间。
+  const recipes = updatePrivateRecipeStorage(localStorage, scopedKey('custom-recipes'), update)
   customRecipes.value = recipes
 }
 

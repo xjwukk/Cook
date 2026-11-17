@@ -1,9 +1,13 @@
 <script lang="ts" setup>
 import type { RecipeMatch } from '@yunyoujun/cook/recommend'
+import type { AssistantMessage } from '~/composables/useAssistant'
 import type { RecipeItem } from '~/types'
 import { onIonViewWillEnter } from '@ionic/vue'
+import { getCustomRecipe, saveCustomRecipe } from '~/composables/store/customRecipe'
 import { cookDocumentHead, publicPages } from '~/constants'
 import { trackCookEvent } from '~/utils/analytics'
+import { draftToCustomRecipeInput, normalizeDraftRecipe } from '~/utils/assistantActions'
+import { buildCustomRecipe } from '~/utils/customRecipe'
 
 definePageMeta({
   alias: ['/assistant', '/apps'],
@@ -20,9 +24,11 @@ const {
   isAuthenticated,
   refreshStatus,
   send,
+  setDraftStatus,
 } = useAssistant()
 
 const desktop = useMediaQuery('(min-width: 768px)')
+const router = useRouter()
 const scroller = ref<{ $el: HTMLIonContentElement }>()
 
 const suggestions = [
@@ -63,6 +69,44 @@ function openDetail(match: RecipeMatch): void {
   detail.value = { recipe: match.recipe, match }
   detailOpen.value = true
   trackCookEvent('click_assistant_recipe')
+}
+
+/** 从一条 assistant 消息里取第 draftIndex 个 draft_recipe（与服务端 actions 顺序一致）。 */
+function draftOf(message: AssistantMessage | undefined, draftIndex: number) {
+  const drafts = (message?.answer?.actions ?? [])
+    .filter(action => action.type === 'draft_recipe')
+    .map(action => normalizeDraftRecipe(action.recipe))
+  return drafts[draftIndex]
+}
+
+/** 确认保存草稿：只有用户自己的 customId 才允许覆盖；官方 id 或编造的 editId 一律按新建处理。 */
+function commitDraft(messageIndex: number, draftIndex: number): string | undefined {
+  const draft = draftOf(messages.value[messageIndex], draftIndex)
+  if (!draft)
+    return undefined
+  const existing = draft.editId ? getCustomRecipe(draft.editId) : undefined
+  const result = buildCustomRecipe(draftToCustomRecipeInput(draft), existing)
+  if ('error' in result) {
+    setDraftStatus(messageIndex, 'error')
+    return undefined
+  }
+  saveCustomRecipe(result.recipe)
+  setDraftStatus(messageIndex, 'saved')
+  return result.recipe.customId
+}
+
+function saveDraft(messageIndex: number, draftIndex: number): void {
+  if (commitDraft(messageIndex, draftIndex))
+    trackCookEvent('assistant_action_draft_save')
+}
+
+/** 「去编辑」：未保存的草稿先落库（方案 A），再走已有的 /recipes/new?id= 回填链路。 */
+function editDraft(messageIndex: number, draftIndex: number): void {
+  const customId = commitDraft(messageIndex, draftIndex)
+  if (!customId)
+    return
+  trackCookEvent('assistant_action_draft_edit')
+  router.push(`/recipes/new?id=${encodeURIComponent(customId)}`)
 }
 
 onMounted(() => {
@@ -118,6 +162,8 @@ watch(() => messages.value.length, scrollToBottom)
             :message="message"
             @open-recipe="openDetail"
             @followup="ask"
+            @save-draft="draftIndex => saveDraft(index, draftIndex)"
+            @edit-draft="draftIndex => editDraft(index, draftIndex)"
           />
           <div v-if="status === 'sending'" class="assistant-thinking" role="status">
             <span class="assistant-dot" /><span class="assistant-dot" /><span class="assistant-dot" />

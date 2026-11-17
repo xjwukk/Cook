@@ -1,12 +1,15 @@
 import type { RecipeMatch, RecommendationOptions } from '@yunyoujun/cook/recommend'
 import type { RecipeItem } from '~/types'
+import type { AssistantRecipeDraft } from '~/utils/assistantActions'
 import { createRecipeRecommender, uniqueStuff } from '@yunyoujun/cook/recommend'
+import { customRecipes } from '~/composables/store/customRecipe'
 import { favoriteEntries } from '~/composables/store/favorite'
 import { recipeHistories } from '~/composables/store/history'
 import { useKitchenStore } from '~/composables/store/kitchen'
 import { useRecipeStore } from '~/composables/store/recipe'
 import { applyRecipeOverrides } from '~/composables/useRecipeOverrides'
 import { trackCookEvent } from '~/utils/analytics'
+import { executeAddIngredients } from '~/utils/assistantActions'
 import { db } from '~/utils/db'
 
 /** 单轮送入模型的最大候选数，与服务端 COOK_AI_MAX_CANDIDATES 对齐 */
@@ -24,6 +27,13 @@ export interface AssistantAnswer {
   answer: string[]
   needs: string[]
   followups: string[]
+  actions?: AssistantAction[]
+}
+
+export interface AssistantAction {
+  type: 'draft_recipe' | 'add_ingredients'
+  recipe?: AssistantRecipeDraft
+  names?: string[]
 }
 
 export interface AssistantMessage {
@@ -32,6 +42,10 @@ export interface AssistantMessage {
   answer?: AssistantAnswer
   matches?: RecipeMatch[]
   error?: boolean
+  /** 菜谱草稿卡片状态：pending 等确认，saved 已写入本机，error 保存失败 */
+  draftStatus?: 'pending' | 'saved' | 'error'
+  /** add_ingredients 直接执行后的回显，如「已加入厨房：豆腐、鸡翅」 */
+  actionResults?: string[]
 }
 
 interface CandidateRecipe {
@@ -190,6 +204,14 @@ export const useAssistant = createSharedComposable(() => {
           },
           favorites: await favoriteNames(),
           historyRecipes: recipeHistories.value.map(item => item.recipe.name).slice(0, 20),
+          // 用户自己的菜谱：模型据此生成 draft_recipe 的 editId（客户端再校验归属）。
+          myRecipes: customRecipes.value.slice(0, 20).map(recipe => ({
+            customId: recipe.customId,
+            name: recipe.name,
+            stuff: recipe.stuff ?? [],
+            tools: recipe.tools ?? [],
+            note: recipe.note ?? '',
+          })),
           candidates,
         }),
       })
@@ -206,12 +228,33 @@ export const useAssistant = createSharedComposable(() => {
         .filter((match): match is RecipeMatch => Boolean(match))
       const fallback = pickedMatches.length ? pickedMatches : matches.slice(0, 3)
 
-      messages.value.push({
+      // add_ingredients 直接执行；draft_recipe 挂在消息上等用户确认，不自动写入。
+      const actionResults: string[] = []
+      for (const action of answer.actions ?? []) {
+        if (action.type === 'add_ingredients' && action.names?.length) {
+          try {
+            const added = executeAddIngredients(action.names)
+            if (added.length)
+              actionResults.push(`已加入厨房：${added.join('、')}`)
+            trackCookEvent('assistant_action_add_ingredients')
+          }
+          catch (error) {
+            actionResults.push(error instanceof Error ? `加入厨房失败：${error.message}` : '加入厨房失败，请重试')
+          }
+        }
+      }
+
+      const message: AssistantMessage = {
         role: 'assistant',
         content: answer.answer.join('\n'),
         answer,
         matches: fallback,
-      })
+      }
+      if (actionResults.length)
+        message.actionResults = actionResults
+      if (answer.actions?.some(action => action.type === 'draft_recipe'))
+        message.draftStatus = 'pending'
+      messages.value.push(message)
       status.value = 'idle'
       trackCookEvent('view_assistant_answer')
     }
@@ -229,6 +272,13 @@ export const useAssistant = createSharedComposable(() => {
     errorMessage.value = ''
   }
 
+  /** 用户点草稿卡片的「保存」/「去编辑」后更新卡片状态。 */
+  function setDraftStatus(index: number, status: AssistantMessage['draftStatus']): void {
+    const message = messages.value[index]
+    if (message?.role === 'assistant')
+      message.draftStatus = status
+  }
+
   return {
     messages,
     status,
@@ -239,6 +289,7 @@ export const useAssistant = createSharedComposable(() => {
     isAuthenticated: computed(() => account.isAuthenticated.value),
     refreshStatus,
     send,
+    setDraftStatus,
     reset,
   }
 })

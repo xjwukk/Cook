@@ -50,4 +50,23 @@ describe('buildCustomRecipe', () => {
     expect(match?.recipe.name).toBe('外婆的红烧肉')
     expect(getRecipeLink(result.recipe)).toBe('')
   })
+
+  it('accepts an assistant draft without any source link', () => {
+    const result = buildCustomRecipe({ name: '可乐鸡翅', stuff: ['鸡翅', '可乐'], tools: ['炒锅'], note: '炖 15 分钟' })
+    expect(result).toMatchObject({
+      // uniqueStuff 会做别名归一（鸡翅→鸡肉）
+      recipe: { name: '可乐鸡翅', stuff: ['鸡肉', '可乐'], tools: ['炒锅'], note: '炖 15 分钟' },
+    })
+    if ('recipe' in result) {
+      expect(result.recipe.bv).toBeUndefined()
+      expect(result.recipe.link).toBeUndefined()
+      expect(getRecipeLink(result.recipe)).toBe('')
+    }
+  })
+
+  it('keeps the existing source when an edit draft leaves it blank', () => {
+    const existing = { customId: 'custom-b', createdAt: 1, bv: 'BV1GJ411x7h7' as const, stuff: ['鸡翅'], tools: [] }
+    const result = buildCustomRecipe({ name: '可乐鸡翅', stuff: ['鸡翅'], tools: [], source: '', note: '' }, existing, 2)
+    expect(result).toMatchObject({ recipe: { customId: 'custom-b', bv: 'BV1GJ411x7h7' } })
+  })
 })

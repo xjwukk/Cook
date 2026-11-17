@@ -190,7 +190,7 @@ async function remove() {
           <ion-input
             v-model="source"
             label="链接"
-            placeholder="B 站链接、BV 号或网址"
+            placeholder="B 站链接、BV 号或网址，可留空"
             inputmode="url"
             :clear-input="true"
             @ion-input="error = ''"

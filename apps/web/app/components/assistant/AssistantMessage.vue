@@ -1,14 +1,25 @@
 <script lang="ts" setup>
 import type { AssistantMessage } from '~/composables/useAssistant'
+import { normalizeDraftRecipe } from '~/utils/assistantActions'
 
-defineProps<{
+const props = defineProps<{
   message: AssistantMessage
 }>()
 
 defineEmits<{
   openRecipe: [match: NonNullable<AssistantMessage['matches']>[number]]
   followup: [text: string]
+  saveDraft: [draftIndex: number]
+  editDraft: [draftIndex: number]
 }>()
+
+/** 服务端已校验过，这里再归一一次用于渲染；畸形条目不显示。 */
+const drafts = computed(() =>
+  (props.message.answer?.actions ?? [])
+    .filter(action => action.type === 'draft_recipe')
+    .map(action => normalizeDraftRecipe(action.recipe))
+    .filter((draft): draft is NonNullable<typeof draft> => Boolean(draft)),
+)
 </script>
 
 <template>
@@ -36,6 +47,21 @@ defineEmits<{
       <p v-if="message.answer?.needs?.length" class="assistant-needs">
         还缺：{{ message.answer.needs.join('、') }}
       </p>
+
+      <p v-for="(result, index) in message.actionResults" :key="`result-${index}`" class="assistant-action-result" role="status">
+        {{ result }}
+      </p>
+
+      <div v-if="drafts.length" class="assistant-drafts">
+        <AssistantRecipeDraftCard
+          v-for="(draft, draftIndex) in drafts"
+          :key="`${draft.name}-${draftIndex}`"
+          :draft="draft"
+          :status="message.draftStatus"
+          @save="$emit('saveDraft', draftIndex)"
+          @edit="$emit('editDraft', draftIndex)"
+        />
+      </div>
 
       <div v-if="message.answer?.followups?.length" class="assistant-followups">
         <button
@@ -117,6 +143,17 @@ defineEmits<{
 .assistant-needs {
   color: var(--c-warn);
   font-size: var(--fs-sm);
+}
+.assistant-action-result {
+  margin: 10px 0 0;
+  color: var(--c-herb);
+  font-size: var(--fs-sm);
+}
+.assistant-drafts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
 }
 .assistant-followups {
   display: flex;

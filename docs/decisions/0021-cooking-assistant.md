@@ -35,11 +35,22 @@
 - **配置入口**：模型地址、模型名与 API Key 由每个账号在「我的 → 助手设置」（`/assistant-settings`）里填写，账号配置优先；服务端 `COOK_AI_*` 环境变量作为默认与兜底。Key 用 AES-256-GCM 加密存入 `ai_config` 表，接口只回显 `sk-…abcd` 提示、不回传明文；保存前可「测试连接」，也可清除配置回落默认。
 - **自定义地址与模型发现**：地址既接受 base URL，也接受完整的 `…/chat/completions`，服务端统一归一化为 base；填好地址与 Key 后可请求 `{base}/models` 拉取模型列表供选择（服务端代理，避免浏览器跨域与 Key 暴露），服务商不提供该接口时提示手动填写。
 
+## 助手写操作（0021 补充）
+
+助手不只推荐，还能执行写操作：
+
+- **协议**：沿用 `response_format: json_object`，在答案里增加可选的 `actions` 数组。不引入 function calling——用户可配置任意 OpenAI 兼容端点，多轮 tool_calls 往返的兼容性与成本都更难控。`actions` 有两种类型：`draft_recipe`（新增/修改用户自己的菜谱）与 `add_ingredients`（把食材加入「我的厨房」）。
+- **服务端校验**：`normalizeActions` 逐条白名单校验（类型、字段长度、数量上限），非法条目静默丢弃而非整体报错；没有 `actions` 或 `actions` 畸形时行为与旧版完全一致。
+- **落地方式**：菜谱增改以**草稿卡片**呈现，用户点「保存」才写入本机（`buildCustomRecipe` → `saveCustomRecipe`，写 localStorage 的自定义菜谱，不参与云同步）；「去编辑」先把草稿落库再跳 `/recipes/new?id=`，复用已有的表单回填链路。食材添加**直接执行**（别名归一后入库，词典外条目同时写入个人目录，与「我的厨房」页 `createAndAdd` 行为一致）。
+- **归属校验**：模型给出的 `editId` 只有命中用户自己的 `customId` 时才会覆盖已有菜谱，否则一律按新建处理——官方收录的菜谱对助手是只读的（仍由管理员覆盖层维护）。
+- **无来源菜谱**：助手草稿可以没有做法链接；存储层本就允许 `bv`/`link` 缺失，只放宽表单层的 `buildCustomRecipe`。
+- **上下文补充**：为了让模型能引用用户自己的菜谱 id，客户端会把「我的菜谱」（customId、菜名、食材、厨具、备注）随请求发送，服务端只透传白名单字段。
+
 ## 影响
 
 - 新增环境变量 `COOK_AI_*`；未配置时助手页不可用但站点其余功能不受影响。
 - 「发现」tab 改名为「料理助手」，`/apps` 保留为别名，旧链接仍可用。
 - 删除「今天吃什么」页面、`RandomRecipe` 组件与 `useRandomRecipe`；`randomPool` 仍留在 store 内部供其他逻辑使用。
 - 删除了 `scripts/generate-ai-intent-contract.mjs`——它唯一的消费者（云函数）已移除，本方案也不需要词表契约。
-- 新增分析事件 `ask_assistant`、`view_assistant_answer`、`click_assistant_recipe`，均不含问题原文。
+- 新增分析事件 `ask_assistant`、`view_assistant_answer`、`click_assistant_recipe`、`assistant_action_draft_save`、`assistant_action_draft_edit`、`assistant_action_add_ingredients`，均不含问题原文。
 - 模型服务商会收到用户主动输入的文本与上述个人数据；部署方需要在隐私说明中告知。

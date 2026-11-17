@@ -18,8 +18,8 @@ export interface CustomRecipeInput {
   name: string
   stuff: string[]
   tools: string[]
-  /** B 站链接、BV 号或任意做法链接 */
-  source: string
+  /** B 站链接、BV 号或任意做法链接；助手草稿可以没有来源 */
+  source?: string
   note: string
 }
 
@@ -63,9 +63,14 @@ export function buildCustomRecipe(
   if (!stuff.length)
     return { error: '至少选一样食材，才能被匹配到' }
   const displayedSource = existing?.bv ? `https://www.bilibili.com/video/${existing.bv}` : existing?.link ?? ''
-  const source = existing && input.source.trim() === displayedSource
-    ? { ...(existing.bv !== undefined ? { bv: existing.bv } : {}), ...(existing.link !== undefined ? { link: existing.link } : {}) }
-    : parseRecipeSource(input.source)
+  // source 可留空（助手草稿没有链接）：为空时沿用已有来源或直接不写 bv/link；
+  // 非空但解析失败仍然报错。
+  const sourceText = input.source?.trim() ?? ''
+  const source = sourceText
+    ? (existing && sourceText === displayedSource
+        ? { ...(existing.bv !== undefined ? { bv: existing.bv } : {}), ...(existing.link !== undefined ? { link: existing.link } : {}) }
+        : parseRecipeSource(sourceText))
+    : (existing ? { ...(existing.bv !== undefined ? { bv: existing.bv } : {}), ...(existing.link !== undefined ? { link: existing.link } : {}) } : {})
   if (!source)
     return { error: '做法链接需要是 B 站 BV 号或 http 开头的网址' }
   const note = input.note.trim()

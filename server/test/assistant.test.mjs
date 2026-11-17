@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import process from 'node:process'
 import { after, before, describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { buildAssistantMessages, validateAssistantAnswer } from '../src/assistant.mjs'
+import { buildAssistantMessages, normalizeActions, validateAssistantAnswer } from '../src/assistant.mjs'
 
 const entry = fileURLToPath(new URL('../src/index.mjs', import.meta.url))
 const dir = mkdtempSync(join(tmpdir(), 'cook-assistant-test-'))
@@ -120,6 +120,60 @@ describe('assistant answer validation', () => {
   it('rejects an answer with nothing usable', () => {
     assert.throws(() => validateAssistantAnswer({ picked: [{ id: 999 }], answer: [] }, [7, 23]))
   })
+
+  it('returns empty actions when the model omits or mangles them', () => {
+    assert.deepEqual(validateAssistantAnswer({ answer: ['好'] }, [7]).actions, [])
+    assert.deepEqual(validateAssistantAnswer({ answer: ['好'], actions: 'x' }, [7]).actions, [])
+    assert.deepEqual(validateAssistantAnswer({ answer: ['好'], actions: [{ type: 'unknown' }, 42, null] }, [7]).actions, [])
+  })
+
+  it('keeps well-formed draft and ingredient actions with limits applied', () => {
+    const result = validateAssistantAnswer({
+      answer: ['记下了'],
+      actions: [
+        { type: 'draft_recipe', recipe: { name: '可乐鸡翅', stuff: ['鸡翅', '可乐'], tools: ['炒锅'], note: '炖 15 分钟' } },
+        { type: 'add_ingredients', names: ['鸡翅', '豆腐'] },
+      ],
+    }, [7])
+    assert.equal(result.actions.length, 2)
+    assert.deepEqual(result.actions[0].recipe, { name: '可乐鸡翅', stuff: ['鸡翅', '可乐'], tools: ['炒锅'], note: '炖 15 分钟' })
+    assert.deepEqual(result.actions[1], { type: 'add_ingredients', names: ['鸡翅', '豆腐'] })
+  })
+})
+
+describe('normalizeActions', () => {
+  it('drops drafts without a name or stuff', () => {
+    assert.deepEqual(normalizeActions([
+      { type: 'draft_recipe', recipe: { name: '', stuff: ['鸡翅'] } },
+      { type: 'draft_recipe', recipe: { name: '无食材的菜', stuff: [] } },
+      { type: 'draft_recipe', recipe: 'not-an-object' },
+      { type: 'draft_recipe' },
+    ]), [])
+  })
+
+  it('clips long fields and caps list sizes', () => {
+    const result = normalizeActions([
+      { type: 'draft_recipe', recipe: { name: '很'.repeat(40), stuff: Array.from({ length: 40 }).fill('食材'), note: '注'.repeat(25_000) } },
+      { type: 'add_ingredients', names: Array.from({ length: 15 }).fill('食材') },
+      { type: 'draft_recipe', recipe: { name: '多余', stuff: ['鸡翅'] } },
+      { type: 'draft_recipe', recipe: { name: '再多余', stuff: ['豆腐'] } },
+      { type: 'draft_recipe', recipe: { name: '超限丢弃', stuff: ['辣椒'] } },
+    ])
+    assert.equal(result.length, 3)
+    assert.equal(result[0].recipe.name.length, 30)
+    assert.equal(result[0].recipe.stuff.length, 32)
+    assert.equal(result[0].recipe.note.length, 20_000)
+    assert.equal(result[1].names.length, 10)
+  })
+
+  it('keeps a sanitized editId only when present', () => {
+    const withId = normalizeActions([{ type: 'draft_recipe', recipe: { name: '菜', stuff: ['蛋'], editId: 'custom-abc' } }])
+    assert.deepEqual(withId[0].recipe.editId, 'custom-abc')
+    const withoutId = normalizeActions([{ type: 'draft_recipe', recipe: { name: '菜', stuff: ['蛋'], editId: '' } }])
+    assert.equal('editId' in withoutId[0].recipe, false)
+    const longId = normalizeActions([{ type: 'draft_recipe', recipe: { name: '菜', stuff: ['蛋'], editId: 'x'.repeat(300) } }])
+    assert.equal(longId[0].recipe.editId.length, 160)
+  })
 })
 
 describe('assistant prompt', () => {
@@ -134,6 +188,17 @@ describe('assistant prompt', () => {
     assert.ok(payload.includes('番茄炒蛋'))
     assert.ok(!payload.includes('extraField'))
     assert.ok(!payload.includes('不应出现'))
+  })
+
+  it('forwards the user own recipes so the model can reference their ids', () => {
+    const messages = buildAssistantMessages({
+      question: '把可乐鸡翅改成甜的',
+      myRecipes: [{ customId: 'custom-abc', name: '可乐鸡翅', stuff: ['鸡翅'], tools: ['炒锅'], note: '少糖' }],
+      candidates,
+    })
+    const payload = messages.at(-1).content
+    assert.ok(payload.includes('custom-abc'))
+    assert.ok(payload.includes('可乐鸡翅'))
   })
 })
 

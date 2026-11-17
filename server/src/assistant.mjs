@@ -13,6 +13,13 @@ const DEFAULT_MAX_CANDIDATES = 50
 const MAX_ANSWER_PARAGRAPHS = 12
 const MAX_TEXT_LENGTH = 400
 const MAX_FOLLOWUPS = 4
+const MAX_ACTIONS = 3
+const MAX_DRAFT_STUFF = 32
+const MAX_DRAFT_NOTE = 20_000
+const MAX_ADD_NAMES = 10
+// 推理型模型（reasoning_content）会占用同一份 max_tokens，答案本身就很短，
+// 上限给得太紧会出现「模型没有返回内容」。
+const MAX_OUTPUT_TOKENS = 2000
 
 export class AssistantError extends Error {
   constructor(code, message, status = 502) {
@@ -163,8 +170,13 @@ const SYSTEM_PROMPT = [
   '4. 中文回答，简洁直接，总共不超过 200 字，先给结论再给理由。',
   '5. 不给营养、医疗、减脂或价格建议。',
   '6. 严格输出 JSON，不要输出 JSON 以外的任何内容：',
-  '{"picked":[{"id":0,"why":"一句话理由"}],"answer":["段落一","段落二"],"needs":["还缺的关键食材"],"followups":["建议的下一个问题"]}',
+  '{"picked":[{"id":0,"why":"一句话理由"}],"answer":["段落一","段落二"],"needs":["还缺的关键食材"],"followups":["建议的下一个问题"],"actions":[]}',
   '说明：picked 按推荐顺序排列，可为空；answer 是回答段落数组；needs 与 followups 可省略。',
+  '7. 用户可能让你「记一道菜」「把某道菜改成…」「把某食材加入厨房」。这类写操作放进 actions 数组，不要只写在 answer 里：',
+  '   - 新增或修改用户的菜谱：{"type":"draft_recipe","recipe":{"name":"菜名","stuff":["食材"],"tools":["厨具"],"note":"做法备注，可为空","editId":"仅当用户要求修改「我的菜谱」里的某道菜时，填它的 customId"}}。官方收录的菜谱是只读的，不要为它们生成 draft_recipe。',
+  '   - 添加食材到厨房：{"type":"add_ingredients","names":["食材1","食材2"]}。',
+  '   - editId 只能从上下文「我的菜谱」的 customId 里原样取；用户说的菜不在「我的菜谱」里就不要填 editId。',
+  '   - 不确定时不要编造 editId；用户没说清是哪道菜时，先在 answer 里问一句。',
 ].join('\n')
 
 function clip(text, max = MAX_TEXT_LENGTH) {
@@ -177,6 +189,46 @@ function normalizeList(value, max = 8) {
   return value.map(item => clip(item)).filter(Boolean).slice(0, max)
 }
 
+/**
+ * 校验模型给出的写操作：逐条白名单校验，非法条目静默丢弃（不整体报错），
+ * 保证没有 actions 或 actions 畸形时行为与旧版完全一致。
+ */
+export function normalizeActions(raw) {
+  if (!Array.isArray(raw))
+    return []
+  const actions = []
+  for (const item of raw.slice(0, MAX_ACTIONS)) {
+    if (!item || typeof item !== 'object' || Array.isArray(item))
+      continue
+    if (item.type === 'draft_recipe') {
+      const recipe = item.recipe && typeof item.recipe === 'object' && !Array.isArray(item.recipe) ? item.recipe : null
+      const name = clip(recipe?.name, 30)
+      const stuff = normalizeList(recipe?.stuff, MAX_DRAFT_STUFF)
+      if (!name || !stuff.length)
+        continue
+      const editId = clip(recipe?.editId, 160)
+      actions.push({
+        type: 'draft_recipe',
+        recipe: {
+          name,
+          stuff,
+          tools: normalizeList(recipe.tools, 16),
+          note: clip(recipe?.note, MAX_DRAFT_NOTE),
+          ...(editId ? { editId } : {}),
+        },
+      })
+    }
+    else if (item.type === 'add_ingredients') {
+      const names = normalizeList(item.names, MAX_ADD_NAMES)
+      if (!names.length)
+        continue
+      actions.push({ type: 'add_ingredients', names })
+    }
+    // 其它 type 一律丢弃：客户端不认识的操作绝不透传。
+  }
+  return actions
+}
+
 /** 把请求体整理成模型可用的上下文；只保留必要字段，控制 token。 */
 export function buildAssistantMessages(input) {
   const question = clip(input?.question, 1000)
@@ -185,6 +237,7 @@ export function buildAssistantMessages(input) {
 
   const candidates = Array.isArray(input?.candidates) ? input.candidates : []
   const inventory = input?.inventory && typeof input.inventory === 'object' ? input.inventory : {}
+  const myRecipes = Array.isArray(input?.myRecipes) ? input.myRecipes : []
   const context = {
     question,
     库存: {
@@ -194,6 +247,13 @@ export function buildAssistantMessages(input) {
     },
     收藏过的菜: normalizeList(input?.favorites, 30),
     最近做过的菜: normalizeList(input?.historyRecipes, 20),
+    我的菜谱: myRecipes.slice(0, 20).map(recipe => ({
+      customId: clip(recipe?.customId, 160),
+      菜名: clip(recipe?.name, 60),
+      食材: normalizeList(recipe?.stuff, 20),
+      厨具: normalizeList(recipe?.tools, 10),
+      备注: clip(recipe?.note, 300),
+    })).filter(recipe => recipe.customId && recipe.菜名),
     候选菜谱: candidates.map(candidate => ({
       id: candidate.id,
       菜名: candidate.name,
@@ -223,7 +283,7 @@ export function buildAssistantMessages(input) {
 
 /**
  * 校验模型输出：只保留候选池里的菜谱 id，段落与追问做长度与数量限制。
- * 返回 { picked, answer, needs, followups }。
+ * 返回 { picked, answer, needs, followups, actions }。
  */
 export function validateAssistantAnswer(raw, candidateIds) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw))
@@ -251,7 +311,7 @@ export function validateAssistantAnswer(raw, candidateIds) {
   if (!answer.length && !picked.length && !needs.length)
     throw new AssistantError('INVALID_MODEL_RESPONSE', '模型没有给出可用内容', 502)
 
-  return { picked, answer, needs, followups }
+  return { picked, answer, needs, followups, actions: normalizeActions(raw.actions) }
 }
 
 /** 调用模型并解析出结构化结果。 */
@@ -263,7 +323,7 @@ export async function callAssistantModel(config, messages) {
     model: config.model,
     messages,
     temperature: 0.4,
-    max_tokens: 1200,
+    max_tokens: MAX_OUTPUT_TOKENS,
     stream: false,
     response_format: { type: 'json_object' },
   }
