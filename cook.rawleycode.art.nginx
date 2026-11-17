@@ -1,0 +1,42 @@
+server {
+    server_name cook.rawleycode.art;
+
+    client_max_body_size 10m;
+
+    root /var/www/cook.rawleycode.art;
+    index index.html;
+
+    # 站点是 CSR 静态产物，hash 化的 _nuxt 资源可长期缓存。
+    location /_nuxt/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable" always;
+        access_log off;
+        try_files $uri =404;
+    }
+
+    location /.well-known/ {
+        expires 1h;
+        access_log off;
+        try_files $uri =404;
+    }
+
+    # 账号与同步接口交给 cook-server，不缓存。
+    location /api/ {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
+        add_header Cache-Control "no-store" always;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    listen 80;
+    listen [::]:80;
+}

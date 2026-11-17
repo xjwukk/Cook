@@ -1,0 +1,28 @@
+[Unit]
+Description=Cook 料理手帐 账号与同步服务
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/cook-git/server
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=8787
+EnvironmentFile=/home/ubuntu/cook-git/.env
+ExecStart=/home/ubuntu/.nvm/versions/node/v24.15.0/bin/node --env-file-if-exists=/home/ubuntu/cook-git/.env src/index.mjs
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/ubuntu/cook-git/server/logs/service.log
+StandardError=append:/home/ubuntu/cook-git/server/logs/service.log
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/cook-git/server/data /home/ubuntu/cook-git/server/logs
+
+[Install]
+WantedBy=multi-user.target
