@@ -57,6 +57,8 @@ defineEmits<{
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  /* 消息是 flex 行的子项，同样要允许收缩，否则窄屏会横向溢出 */
+  min-width: 0;
 }
 .assistant-message.is-user {
   justify-content: flex-end;
@@ -74,7 +76,10 @@ defineEmits<{
   font-size: 15px;
 }
 .assistant-bubble {
+  /* flex 子项默认 min-width:auto，会被 nowrap 的菜谱卡片撑破容器，必须允许收缩 */
+  min-width: 0;
   max-width: min(100%, 34em);
+  overflow-wrap: break-word;
   padding: 12px 14px;
   border: 1px solid var(--c-rule);
   border-radius: var(--r-lg);
