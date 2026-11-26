@@ -3,6 +3,7 @@ import { uniqueStuff } from '@yunyoujun/cook/recommend'
 import { useKitchenStore } from '~/composables/store/kitchen'
 import { usePersonalCatalog } from '~/composables/usePersonalCatalog'
 import * as base from '~/data/food'
+import { normalizeCatalogIngredients } from '~/utils/ingredientCatalog'
 import { readPersonalCatalog } from '~/utils/personalCatalogStorage'
 import { scopedKey } from '~/utils/storageScope'
 
@@ -29,9 +30,11 @@ export function normalizeDraftRecipe(draft: Partial<AssistantRecipeDraft> | unde
   if (!draft || typeof draft !== 'object')
     return undefined
   const name = String(draft.name ?? '').trim().slice(0, DRAFT_NAME_MAX)
-  const stuff = uniqueStuff((Array.isArray(draft.stuff) ? draft.stuff : [])
+  // 食材名对到「现有菜谱菜单」：鲜虾→虾、葱花→葱；对不上的原样保留，不丢主料。
+  const { names } = normalizeCatalogIngredients((Array.isArray(draft.stuff) ? draft.stuff : [])
     .map(item => String(item ?? '').trim().slice(0, 100))
-    .filter(Boolean)).slice(0, DRAFT_STUFF_MAX)
+    .filter(Boolean))
+  const stuff = names.slice(0, DRAFT_STUFF_MAX)
   const tools = [...new Set((Array.isArray(draft.tools) ? draft.tools : [])
     .map(item => String(item ?? '').trim().slice(0, 100))
     .filter(Boolean))].slice(0, 16)

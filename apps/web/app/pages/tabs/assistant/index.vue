@@ -2,6 +2,7 @@
 import type { RecipeMatch } from '@yunyoujun/cook/recommend'
 import type { AssistantMessage } from '~/composables/useAssistant'
 import type { RecipeItem } from '~/types'
+import type { AssistantAttachment } from '~/utils/assistantImages'
 import { onIonViewWillEnter } from '@ionic/vue'
 import { getCustomRecipe, saveCustomRecipe } from '~/composables/store/customRecipe'
 import { cookDocumentHead, publicPages } from '~/constants'
@@ -21,6 +22,8 @@ const {
   enabled,
   modelName,
   checking,
+  imagesSupported,
+  visionConfigured,
   isAuthenticated,
   refreshStatus,
   send,
@@ -49,10 +52,17 @@ const disabledReason = computed(() => {
 
 const canAsk = computed(() => !disabledReason.value)
 
-async function ask(text: string): Promise<void> {
+/** 没单独配图片模型时提醒一句：主模型不支持图片的话可以去设置里换一个。 */
+const visionHint = computed(() =>
+  visionConfigured.value
+    ? ''
+    : '当前用主模型识图；如果它不支持图片，可以在「我的 → 助手设置」里指定图片模型。',
+)
+
+async function ask(text: string, attachments: AssistantAttachment[] = []): Promise<void> {
   if (!canAsk.value)
     return
-  await send(text)
+  await send(text, attachments)
   await nextTick()
   scrollToBottom()
 }
@@ -141,6 +151,9 @@ watch(() => messages.value.length, scrollToBottom)
           <p class="assistant-empty-body">
             我会先按你的食材和厨具在本地 887 道菜里找，再挑几道适合的给你——不会编造菜谱。
           </p>
+          <p class="assistant-empty-body">
+            也可以直接发菜谱截图，我帮你把食材和步骤抄成菜谱。
+          </p>
           <div class="assistant-suggestions">
             <button
               v-for="text in suggestions"
@@ -179,6 +192,8 @@ watch(() => messages.value.length, scrollToBottom)
           :disabled="!canAsk"
           :sending="status === 'sending'"
           :hint="disabledReason"
+          :vision-available="imagesSupported"
+          :vision-hint="visionHint"
           @send="ask"
         />
         <NuxtLink

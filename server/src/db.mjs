@@ -51,6 +51,7 @@ export function openDatabase(file) {
       user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       base_url TEXT NOT NULL,
       model TEXT NOT NULL,
+      vision_model TEXT NOT NULL DEFAULT '',
       api_key_cipher TEXT NOT NULL,
       enabled INTEGER NOT NULL DEFAULT 1,
       updated_at INTEGER NOT NULL
@@ -68,6 +69,11 @@ export function openDatabase(file) {
   const columns = db.prepare('PRAGMA table_info(users)').all()
   if (!columns.some(column => column.name === 'role'))
     db.exec('ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT \'user\'')
+
+  // 旧库升级：ai_config 表没有 vision_model 列时补上，留空表示跟随主模型。
+  const aiColumns = db.prepare('PRAGMA table_info(ai_config)').all()
+  if (!aiColumns.some(column => column.name === 'vision_model'))
+    db.exec('ALTER TABLE ai_config ADD COLUMN vision_model TEXT NOT NULL DEFAULT \'\'')
 
   return db
 }
@@ -254,22 +260,23 @@ export function createAiConfigRepository(db) {
   return {
     get(userId) {
       return db.prepare(`
-        SELECT base_url AS baseUrl, model, api_key_cipher AS apiKeyCipher,
-               enabled, updated_at AS updatedAt
+        SELECT base_url AS baseUrl, model, vision_model AS visionModel,
+               api_key_cipher AS apiKeyCipher, enabled, updated_at AS updatedAt
         FROM ai_config WHERE user_id = ?
       `).get(userId)
     },
-    put(userId, { baseUrl, model, apiKeyCipher, enabled }) {
+    put(userId, { baseUrl, model, visionModel, apiKeyCipher, enabled }) {
       const now = Date.now()
       db.prepare(`
-        INSERT INTO ai_config (user_id, base_url, model, api_key_cipher, enabled, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO ai_config (user_id, base_url, model, vision_model, api_key_cipher, enabled, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id) DO UPDATE SET
           base_url = excluded.base_url, model = excluded.model,
+          vision_model = excluded.vision_model,
           api_key_cipher = excluded.api_key_cipher, enabled = excluded.enabled,
           updated_at = excluded.updated_at
-      `).run(userId, baseUrl, model, apiKeyCipher, enabled ? 1 : 0, now)
-      return { baseUrl, model, enabled: Boolean(enabled), updatedAt: now }
+      `).run(userId, baseUrl, model, visionModel ?? '', apiKeyCipher, enabled ? 1 : 0, now)
+      return { baseUrl, model, visionModel: visionModel ?? '', enabled: Boolean(enabled), updatedAt: now }
     },
     remove(userId) {
       db.prepare('DELETE FROM ai_config WHERE user_id = ?').run(userId)

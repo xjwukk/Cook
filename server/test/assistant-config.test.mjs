@@ -134,6 +134,34 @@ describe('assistant per-user config', () => {
     assert.ok(!JSON.stringify(body).includes('sk-test-12345678'))
   })
 
+  it('stores an optional vision model and lets it be cleared', async () => {
+    const cookie = await register('visionuser')
+    const save = await saveConfig(cookie, {
+      baseUrl: `http://127.0.0.1:${modelPort}/v1`,
+      model: 'user-model',
+      visionModel: 'user-vision-model',
+      apiKey: 'sk-vision-12345678',
+    })
+    assert.equal(save.status, 200)
+
+    const body = await (await fetch(`${base}/api/assistant/config`, { headers: { Cookie: cookie } })).json()
+    assert.equal(body.visionModel, 'user-vision-model')
+
+    const status = await (await fetch(`${base}/api/assistant/status`, { headers: { Cookie: cookie } })).json()
+    assert.equal(status.vision.model, 'user-vision-model')
+    assert.equal(status.vision.configured, true)
+
+    // 留空表示跟随主模型。
+    const cleared = await saveConfig(cookie, {
+      baseUrl: `http://127.0.0.1:${modelPort}/v1`,
+      model: 'user-model',
+      visionModel: '',
+    })
+    assert.equal(cleared.status, 200)
+    const after = await (await fetch(`${base}/api/assistant/config`, { headers: { Cookie: cookie } })).json()
+    assert.equal(after.visionModel, '')
+  })
+
   it('rejects remote http endpoints and a missing key', async () => {
     const cookie = await register('configcheck')
     const insecure = await saveConfig(cookie, {

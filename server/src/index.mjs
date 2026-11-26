@@ -1,11 +1,13 @@
 import { Buffer } from 'node:buffer'
 import { createServer } from 'node:http'
 import process from 'node:process'
+import { normalizeImages } from './assistant-images.mjs'
 import {
   AssistantError,
   buildAssistantMessages,
   callAssistantModel,
   listAssistantModels,
+  MAX_IMAGE_ACTIONS,
   normalizeBaseUrl,
   normalizeModel,
   readAssistantConfig,
@@ -40,6 +42,8 @@ const SESSION_TTL = SESSION_DAYS * 24 * 60 * 60 * 1000
 const COOKIE_SECURE = process.env.COOK_COOKIE_SECURE === '1'
 const COOKIE_NAME = 'cook_session'
 const BODY_LIMIT = 8 * 1024 * 1024
+// 助手对话会带 base64 图片，请求体比普通接口大；单独放宽但仍低于全局上限。
+const CHAT_BODY_LIMIT = 6 * 1024 * 1024
 const INVITE_CODE = process.env.COOK_INVITE_CODE || ''
 const ALLOWED_ORIGINS = (process.env.COOK_ALLOWED_ORIGINS || '')
   .split(',')
@@ -105,12 +109,12 @@ function parseCookies(header = '') {
   return result
 }
 
-async function readJson(req) {
+async function readJson(req, limit = BODY_LIMIT) {
   const chunks = []
   let size = 0
   for await (const chunk of req) {
     size += chunk.length
-    if (size > BODY_LIMIT)
+    if (size > limit)
       throw Object.assign(new Error('请求体过大'), { status: 413 })
     chunks.push(chunk)
   }
@@ -230,6 +234,7 @@ function resolveUserAssistantConfig(userId) {
     enabled: true,
     baseUrl: row.baseUrl,
     model: row.model,
+    visionModel: row.visionModel ?? '',
     apiKey,
     timeout: assistantConfig.timeout,
     maxCandidates: assistantConfig.maxCandidates,
@@ -276,6 +281,11 @@ const routes = [
       enabled: Boolean(own || assistantConfig.enabled),
       model: own ? own.model : assistantConfig.enabled ? assistantConfig.model : '',
       source,
+      // 图片识别：单独配了「图片模型」就用它，没配则跟随主模型。
+      vision: {
+        model: own ? own.visionModel : assistantConfig.enabled ? assistantConfig.visionModel : '',
+        configured: Boolean(own ? own.visionModel : assistantConfig.enabled && assistantConfig.visionModel),
+      },
     })
   }],
 
@@ -293,6 +303,7 @@ const routes = [
       enabled: Boolean(row?.enabled && apiKey),
       baseUrl: row?.baseUrl ?? '',
       model: row?.model ?? '',
+      visionModel: row?.visionModel ?? '',
       keyHint: apiKey ? `${apiKey.slice(0, 3)}…${apiKey.slice(-4)}` : '',
       source: row && apiKey ? 'user' : assistantConfig.enabled ? 'server' : 'none',
       serverModel: assistantConfig.enabled ? assistantConfig.model : '',
@@ -309,6 +320,8 @@ const routes = [
     const body = await readJson(req)
     const baseUrl = normalizeBaseUrl(body.baseUrl)
     const model = normalizeModel(body.model)
+    // 「图片模型」可选：留空表示跟随主模型。
+    const visionModel = body.visionModel ? normalizeModel(body.visionModel) : ''
     const existing = aiConfig.get(user.id)
     const existingKey = existing ? decryptSecret(secretKey, existing.apiKeyCipher) : ''
     const inputKey = String(body.apiKey ?? '').trim()
@@ -325,10 +338,11 @@ const routes = [
     aiConfig.put(user.id, {
       baseUrl,
       model,
+      visionModel,
       apiKeyCipher: encryptSecret(secretKey, apiKey),
       enabled,
     })
-    sendJson(res, 200, { saved: true, enabled, model, baseUrl })
+    sendJson(res, 200, { saved: true, enabled, model, visionModel, baseUrl })
   }],
 
   ['DELETE', /^\/api\/assistant\/config$/, async (req, res) => {
@@ -420,13 +434,20 @@ const routes = [
       return
     }
 
-    const body = await readJson(req)
+    const body = await readJson(req, CHAT_BODY_LIMIT)
     const candidates = Array.isArray(body.candidates) ? body.candidates.slice(0, assistantConfig.maxCandidates) : []
     const candidateIds = candidates.map(candidate => Number(candidate?.id)).filter(Number.isInteger)
 
-    const messages = buildAssistantMessages({ ...body, candidates })
-    const raw = await callAssistantModel(config, messages)
-    const answer = validateAssistantAnswer(raw, candidateIds)
+    // 图片：只作为本次识别的输入，不落盘、不入库、不写进保存的菜谱。
+    const images = normalizeImages(body.images, {
+      maxCount: assistantConfig.maxImages,
+      maxBytes: assistantConfig.maxImageBytes,
+      maxTotalBytes: assistantConfig.maxImageBytes * assistantConfig.maxImages,
+    })
+
+    const messages = buildAssistantMessages({ ...body, candidates, images })
+    const raw = await callAssistantModel(config, messages, { imageCount: images.length })
+    const answer = validateAssistantAnswer(raw, candidateIds, { maxActions: images.length ? MAX_IMAGE_ACTIONS : undefined })
 
     aiUsage.record(user.id)
     sendJson(res, 200, answer)

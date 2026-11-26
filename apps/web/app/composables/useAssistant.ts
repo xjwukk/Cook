@@ -1,6 +1,7 @@
 import type { RecipeMatch, RecommendationOptions } from '@yunyoujun/cook/recommend'
 import type { RecipeItem } from '~/types'
 import type { AssistantRecipeDraft } from '~/utils/assistantActions'
+import type { AssistantAttachment } from '~/utils/assistantImages'
 import { createRecipeRecommender, uniqueStuff } from '@yunyoujun/cook/recommend'
 import { customRecipes } from '~/composables/store/customRecipe'
 import { favoriteEntries } from '~/composables/store/favorite'
@@ -11,6 +12,7 @@ import { applyRecipeOverrides } from '~/composables/useRecipeOverrides'
 import { trackCookEvent } from '~/utils/analytics'
 import { executeAddIngredients } from '~/utils/assistantActions'
 import { db } from '~/utils/db'
+import { catalogIngredientNames } from '~/utils/ingredientCatalog'
 
 /** 单轮送入模型的最大候选数，与服务端 COOK_AI_MAX_CANDIDATES 对齐 */
 const MAX_CANDIDATES = 50
@@ -27,6 +29,8 @@ export interface AssistantAnswer {
   answer: string[]
   needs: string[]
   followups: string[]
+  /** 看不清或需要核对的地方（例如某张图无法辨认） */
+  warnings?: string[]
   actions?: AssistantAction[]
 }
 
@@ -46,6 +50,8 @@ export interface AssistantMessage {
   draftStatus?: 'pending' | 'saved' | 'error'
   /** add_ingredients 直接执行后的回显，如「已加入厨房：豆腐、鸡翅」 */
   actionResults?: string[]
+  /** 用户这一轮上传的图片（data URL，只在内存里，不入库） */
+  images?: { id: string, name: string, dataUrl: string }[]
 }
 
 interface CandidateRecipe {
@@ -117,6 +123,11 @@ export const useAssistant = createSharedComposable(() => {
   const enabled = ref(false)
   const modelName = ref('')
   const checking = ref(true)
+  /** 是否可以附图：助手可用即可，识图失败时服务端会给出提示 */
+  const imagesSupported = ref(false)
+  /** 是否单独配置了「图片模型」；没配就用主模型试 */
+  const visionConfigured = ref(false)
+  const visionModel = ref('')
 
   async function refreshStatus(): Promise<void> {
     checking.value = true
@@ -125,10 +136,16 @@ export const useAssistant = createSharedComposable(() => {
       const body = await response.json()
       enabled.value = Boolean(body.enabled)
       modelName.value = body.model || ''
+      imagesSupported.value = Boolean(body.enabled)
+      visionConfigured.value = Boolean(body.vision?.configured)
+      visionModel.value = body.vision?.model || ''
     }
     catch {
       enabled.value = false
       modelName.value = ''
+      imagesSupported.value = false
+      visionConfigured.value = false
+      visionModel.value = ''
     }
     finally {
       checking.value = false
@@ -138,7 +155,13 @@ export const useAssistant = createSharedComposable(() => {
   function recentHistory(): { role: 'user' | 'assistant', content: string }[] {
     return messages.value
       .slice(-HISTORY_TURNS)
-      .map(message => ({ role: message.role, content: message.content }))
+      .map(message => ({
+        role: message.role,
+        // 图片不会重发，历史里留个标记让模型知道上一轮看过图。
+        content: message.images?.length
+          ? `${message.content} [附 ${message.images.length} 张图片]`
+          : message.content,
+      }))
   }
 
   async function favoriteNames(): Promise<string[]> {
@@ -149,15 +172,24 @@ export const useAssistant = createSharedComposable(() => {
     return recipes.filter(recipe => recipe.id != null && ids.has(recipe.id)).map(recipe => recipe.name).slice(0, 30)
   }
 
-  async function send(text: string): Promise<void> {
+  async function send(text: string, attachments: AssistantAttachment[] = []): Promise<void> {
     const question = text.trim()
-    if (!question || status.value === 'sending')
+    const hasImages = attachments.length > 0
+    if ((!question && !hasImages) || status.value === 'sending')
       return
 
-    messages.value.push({ role: 'user', content: question })
+    messages.value.push({
+      role: 'user',
+      content: question || '（仅图片）',
+      ...(hasImages
+        ? { images: attachments.map(item => ({ id: item.id, name: item.name, dataUrl: item.dataUrl })) }
+        : {}),
+    })
     status.value = 'sending'
     errorMessage.value = ''
     trackCookEvent('ask_assistant')
+    if (hasImages)
+      trackCookEvent('attach_assistant_image')
 
     try {
       const query = rStore.parseText(question)
@@ -180,7 +212,8 @@ export const useAssistant = createSharedComposable(() => {
       }, rStore.eligibleRecipes)
 
       const candidates = matches.map(toCandidate).filter(item => Number.isInteger(item.id))
-      if (!candidates.length) {
+      // 有图片时不需要候选：图片本身就是这一轮的内容。
+      if (!candidates.length && !hasImages) {
         messages.value.push({
           role: 'assistant',
           content: '还没有能匹配的菜。先在「做菜」或「我的厨房」里加几样食材，再问我一次。',
@@ -213,6 +246,17 @@ export const useAssistant = createSharedComposable(() => {
             note: recipe.note ?? '',
           })),
           candidates,
+          // 图片：只作为这一轮识别的输入，不入库、不写进菜谱。
+          ...(hasImages
+            ? {
+                images: attachments.map(item => ({
+                  mime: item.mime,
+                  data: item.dataUrl.split(',')[1] ?? '',
+                })),
+                // 可选食材名：模型只能从这里挑，菜名才不会自创。
+                ingredientNames: catalogIngredientNames(),
+              }
+            : {}),
         }),
       })
 
@@ -257,6 +301,8 @@ export const useAssistant = createSharedComposable(() => {
       messages.value.push(message)
       status.value = 'idle'
       trackCookEvent('view_assistant_answer')
+      if (answer.warnings?.length)
+        trackCookEvent('assistant_image_unreadable')
     }
     catch (error) {
       const message = error instanceof Error ? error.message : '助手暂时不可用，请稍后重试'
@@ -286,6 +332,9 @@ export const useAssistant = createSharedComposable(() => {
     enabled: readonly(enabled),
     modelName: readonly(modelName),
     checking: readonly(checking),
+    imagesSupported: readonly(imagesSupported),
+    visionConfigured: readonly(visionConfigured),
+    visionModel: readonly(visionModel),
     isAuthenticated: computed(() => account.isAuthenticated.value),
     refreshStatus,
     send,

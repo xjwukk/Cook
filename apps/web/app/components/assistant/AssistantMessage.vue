@@ -29,6 +29,12 @@ const drafts = computed(() =>
     </div>
 
     <div class="assistant-bubble" :class="{ 'is-error': message.error }">
+      <AssistantImageStrip
+        v-if="message.images?.length"
+        class="assistant-message-images"
+        :images="message.images"
+      />
+
       <!-- 纯文本段落渲染，不解析 HTML -->
       <p v-for="(paragraph, index) in message.answer?.answer ?? [message.content]" :key="index">
         {{ paragraph }}
@@ -46,6 +52,15 @@ const drafts = computed(() =>
 
       <p v-if="message.answer?.needs?.length" class="assistant-needs">
         还缺：{{ message.answer.needs.join('、') }}
+      </p>
+
+      <p
+        v-for="(warning, index) in message.answer?.warnings ?? []"
+        :key="`warning-${index}`"
+        class="assistant-warning"
+        role="status"
+      >
+        {{ warning }}
       </p>
 
       <p v-for="(result, index) in message.actionResults" :key="`result-${index}`" class="assistant-action-result" role="status">
@@ -143,6 +158,13 @@ const drafts = computed(() =>
 .assistant-needs {
   color: var(--c-warn);
   font-size: var(--fs-sm);
+}
+.assistant-warning {
+  color: var(--c-warn);
+  font-size: var(--fs-sm);
+}
+.assistant-message-images {
+  margin-bottom: 10px;
 }
 .assistant-action-result {
   margin: 10px 0 0;

@@ -11,6 +11,7 @@ interface AssistantConfig {
   enabled: boolean
   baseUrl: string
   model: string
+  visionModel: string
   keyHint: string
   source: 'user' | 'server' | 'none'
   serverModel: string
@@ -27,6 +28,7 @@ const successMessage = ref('')
 
 const baseUrl = ref('https://api.deepseek.com/v1')
 const model = ref('deepseek-chat')
+const visionModel = ref('')
 const apiKey = ref('')
 const enabled = ref(true)
 const models = ref<string[]>([])
@@ -55,6 +57,8 @@ async function load(): Promise<void> {
       baseUrl.value = body.baseUrl
     if (body.model)
       model.value = body.model
+    if (body.visionModel)
+      visionModel.value = body.visionModel
   }
   catch {
     errorMessage.value = '无法读取当前配置'
@@ -157,6 +161,7 @@ async function save(): Promise<void> {
       body: JSON.stringify({
         baseUrl: baseUrl.value.trim(),
         model: model.value.trim(),
+        visionModel: visionModel.value.trim(),
         apiKey: apiKey.value.trim(),
         enabled: enabled.value,
       }),
@@ -301,6 +306,20 @@ onMounted(load)
                 </p>
               </div>
 
+              <label class="settings-field">
+                <span>图片模型（可选）</span>
+                <input
+                  v-model="visionModel"
+                  type="text"
+                  autocomplete="off"
+                  list="assistant-models"
+                  placeholder="留空则用上面的模型"
+                >
+                <small class="settings-field-help">
+                  只有支持图片的模型才能识图（例如 gpt-4o、qwen-vl、gemini 系列）。留空表示用上面的模型去试。
+                </small>
+              </label>
+
               <label class="settings-toggle">
                 <input v-model="enabled" type="checkbox">
                 <span>启用这个模型配置</span>
@@ -348,6 +367,9 @@ onMounted(load)
 
             <p class="settings-footnote">
               Key 加密保存在你自己的服务器上，页面不会回显完整 Key。请求由服务器转发给模型服务商；你提问时的食材、厨具、调料与收藏菜名会一并发送。
+            </p>
+            <p class="settings-footnote">
+              你上传的图片只会随本次请求转发给模型服务商用于识别，不会保存到服务器，也不会写进你保存的菜谱。
             </p>
           </template>
         </template>

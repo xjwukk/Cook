@@ -34,3 +34,4 @@
 | [0020](./0020-brand-rename-and-warm-editorial-tokens)  | 品牌更名「料理手帐」与手账插画 logo  | 已采纳       |
 | [0021](./0021-cooking-assistant)                       | 料理助手：本地粗筛 + 模型挑选        | 已采纳       |
 | [0023](./0023-recipe-overrides)                        | 官方菜谱的全局覆盖层                 | 已采纳       |
+| [0024](./0024-assistant-image-input)                   | 料理助手：上传图片识菜谱             | 已采纳       |

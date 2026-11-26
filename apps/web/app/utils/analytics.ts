@@ -5,6 +5,7 @@ export type CookEventName
     | 'parse_query' | 'parse_query_empty'
     | 'ask_assistant' | 'view_assistant_answer' | 'click_assistant_recipe'
     | 'assistant_action_draft_save' | 'assistant_action_draft_edit' | 'assistant_action_add_ingredients'
+    | 'attach_assistant_image' | 'assistant_image_unreadable'
 
 interface ClarityConfig {
   projectId: string
