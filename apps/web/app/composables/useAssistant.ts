@@ -125,9 +125,6 @@ export const useAssistant = createSharedComposable(() => {
   const checking = ref(true)
   /** 是否可以附图：助手可用即可，识图失败时服务端会给出提示 */
   const imagesSupported = ref(false)
-  /** 是否单独配置了「图片模型」；没配就用主模型试 */
-  const visionConfigured = ref(false)
-  const visionModel = ref('')
 
   async function refreshStatus(): Promise<void> {
     checking.value = true
@@ -137,15 +134,11 @@ export const useAssistant = createSharedComposable(() => {
       enabled.value = Boolean(body.enabled)
       modelName.value = body.model || ''
       imagesSupported.value = Boolean(body.enabled)
-      visionConfigured.value = Boolean(body.vision?.configured)
-      visionModel.value = body.vision?.model || ''
     }
     catch {
       enabled.value = false
       modelName.value = ''
       imagesSupported.value = false
-      visionConfigured.value = false
-      visionModel.value = ''
     }
     finally {
       checking.value = false
@@ -333,8 +326,6 @@ export const useAssistant = createSharedComposable(() => {
     modelName: readonly(modelName),
     checking: readonly(checking),
     imagesSupported: readonly(imagesSupported),
-    visionConfigured: readonly(visionConfigured),
-    visionModel: readonly(visionModel),
     isAuthenticated: computed(() => account.isAuthenticated.value),
     refreshStatus,
     send,

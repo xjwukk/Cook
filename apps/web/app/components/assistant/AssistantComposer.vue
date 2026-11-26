@@ -10,8 +10,6 @@ const props = defineProps<{
   hint?: string
   /** 是否可以附图（助手已配置模型） */
   visionAvailable?: boolean
-  /** 识图相关提示，例如「当前用主模型识图」 */
-  visionHint?: string
 }>()
 
 const emit = defineEmits<{ send: [text: string, attachments: AssistantAttachment[]] }>()
@@ -88,9 +86,6 @@ function removeAttachment(id: string): void {
     <p v-if="hint" class="assistant-composer-hint" role="status">
       {{ hint }}
     </p>
-    <p v-else-if="visionHint && visionAvailable" class="assistant-composer-hint" role="status">
-      {{ visionHint }}
-    </p>
     <p v-if="imageError" class="assistant-composer-error" role="alert">
       {{ imageError }}
     </p>
@@ -128,7 +123,7 @@ function removeAttachment(id: string): void {
         v-model="text"
         class="assistant-composer-input"
         :disabled="disabled"
-        :placeholder="disabled ? (hint || '暂时无法提问') : (placeholder || '问点什么，也可以直接发菜谱截图')"
+        :placeholder="disabled ? (hint || '暂时无法提问') : (placeholder || '问点什么')"
         rows="1"
         enterkeyhint="send"
         aria-label="向料理助手提问"

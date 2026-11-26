@@ -23,7 +23,6 @@ const {
   modelName,
   checking,
   imagesSupported,
-  visionConfigured,
   isAuthenticated,
   refreshStatus,
   send,
@@ -51,13 +50,6 @@ const disabledReason = computed(() => {
 })
 
 const canAsk = computed(() => !disabledReason.value)
-
-/** 没单独配图片模型时提醒一句：主模型不支持图片的话可以去设置里换一个。 */
-const visionHint = computed(() =>
-  visionConfigured.value
-    ? ''
-    : '当前用主模型识图；如果它不支持图片，可以在「我的 → 助手设置」里指定图片模型。',
-)
 
 async function ask(text: string, attachments: AssistantAttachment[] = []): Promise<void> {
   if (!canAsk.value)
@@ -193,7 +185,6 @@ watch(() => messages.value.length, scrollToBottom)
           :sending="status === 'sending'"
           :hint="disabledReason"
           :vision-available="imagesSupported"
-          :vision-hint="visionHint"
           @send="ask"
         />
         <NuxtLink
