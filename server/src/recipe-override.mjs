@@ -6,8 +6,11 @@ import { Buffer } from 'node:buffer'
  * recipe.csv 由客户端和管理页负责，服务端只保证存进去的东西是干净的。
  */
 
-export const RECIPE_OVERRIDE_FIELDS = ['id', 'name', 'stuff', 'bv', 'difficulty', 'tags', 'methods', 'tools', 'link']
+export const RECIPE_OVERRIDE_FIELDS = ['id', 'name', 'stuff', 'bv', 'difficulty', 'tags', 'methods', 'tools', 'link', 'note']
 export const RECIPE_OVERRIDE_LIMIT = 8 * 1024
+// 投稿发布的菜谱带着步骤正文，体积上限单独放宽。
+export const PUBLISHED_RECIPE_LIMIT = 96 * 1024
+export const PUBLISHED_NOTE_MAX = 20_000
 
 const DIFFICULTIES = new Set(['简单', '普通', '困难', ''])
 const VIDEO_ID_RE = /^(?:BV[0-9A-Za-z]{10}|av\d+)$/
@@ -52,8 +55,13 @@ export function pickRecipeOverride(data) {
  * 校验 PUT body，返回 { data } 或 { error }。
  * data 是规范化后的完整覆盖对象，空的可选字段保留为空字符串，
  * 这样清空视频号 / 图文链接时能覆盖掉原值。
+ *
+ * options.limit 允许发布菜谱带更长的步骤正文；options.allowEmptyTools
+ * 允许发布菜谱没有厨具（官方菜谱的厨具必须来自词典，通常不会为空）。
  */
-export function validateRecipeOverride(input, expectedId) {
+export function validateRecipeOverride(input, expectedId, options = {}) {
+  const limit = options.limit ?? RECIPE_OVERRIDE_LIMIT
+  const allowEmptyTools = options.allowEmptyTools === true
   if (!input || typeof input !== 'object' || Array.isArray(input))
     return { error: '菜谱数据格式不正确' }
 
@@ -70,7 +78,7 @@ export function validateRecipeOverride(input, expectedId) {
   if (!stuff)
     return { error: '食材必须是非空字符串列表' }
 
-  const tools = toStringArray(input.tools)
+  const tools = toStringArray(input.tools, allowEmptyTools)
   if (!tools)
     return { error: '厨具必须是非空字符串列表' }
 
@@ -98,10 +106,17 @@ export function validateRecipeOverride(input, expectedId) {
   if (link && !LINK_RE.test(link))
     return { error: '图文链接应以 https:// 开头' }
 
-  const data = { id: input.id, name, stuff, bv, difficulty, tags, methods, tools, link }
+  const note = optionalText(input.note)
+  if (note === null)
+    return { error: '做法备注格式不正确' }
+  if ([...note].length > PUBLISHED_NOTE_MAX)
+    return { error: `做法备注不能超过 ${PUBLISHED_NOTE_MAX} 个字` }
 
-  if (Buffer.byteLength(JSON.stringify(data), 'utf8') > RECIPE_OVERRIDE_LIMIT)
-    return { error: '单条菜谱数据不能超过 8 KB' }
+  // 步骤正文只在投稿发布的菜谱上出现；官方菜谱的步骤来自 recipe-text.json。
+  const data = { id: input.id, name, stuff, bv, difficulty, tags, methods, tools, link, ...(note ? { note } : {}) }
+
+  if (Buffer.byteLength(JSON.stringify(data), 'utf8') > limit)
+    return { error: `单条菜谱数据不能超过 ${Math.round(limit / 1024)} KB` }
 
   return { data }
 }

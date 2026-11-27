@@ -5,6 +5,8 @@ import type { DbRecipeItem } from '~/utils/db'
 import { recipesToCsv } from '@yunyoujun/cook'
 import dayjs from 'dayjs'
 import { useIndexedDB } from '~/composables/db'
+import { customRecipes } from '~/composables/store/customRecipe'
+import { publicationOf } from '~/composables/store/recipePublications'
 import {
   applyRecipeOverrides,
   hasRecipeOverride,
@@ -45,8 +47,17 @@ const editing = shallowRef<RecipeItem | null>(null)
 const editorOpen = ref(false)
 const saving = ref(false)
 
+/** 投稿发布的菜谱 id 从这里开始，和服务端 COOK_PUBLISHED_ID_BASE 对齐。 */
+const PUBLISHED_ID_BASE = 10000
+
+/** 官方菜谱 / 我的菜谱 两种视角：新增的与改过的都能一眼找到。 */
+const segment = ref<'official' | 'mine'>('official')
+
 const effective = computed(() => applyRecipeOverrides(baseRecipes.value))
-const modifiedCount = computed(() => effective.value.filter(recipe => hasRecipeOverride(recipe.id)).length)
+const isPublished = (recipe: RecipeItem) => typeof recipe.id === 'number' && recipe.id >= PUBLISHED_ID_BASE
+/** 可以导出补丁 CSV 的只有官方菜谱的修订——发布菜谱没有 note 列，回灌 CSV 会丢步骤。 */
+const modifiedCount = computed(() => effective.value.filter(recipe => hasRecipeOverride(recipe.id) && !isPublished(recipe)).length)
+const publishedCount = computed(() => effective.value.filter(isPublished).length)
 const filtered = computed(() => {
   const text = keyword.value.trim()
   return effective.value.filter((recipe) => {
@@ -58,6 +69,22 @@ const filtered = computed(() => {
   })
 })
 const visible = computed(() => filtered.value.slice(0, limit.value))
+
+/** 「我的菜谱」段：客户端本地的私人菜谱 + 投稿状态。 */
+const myRecipes = computed(() => [...customRecipes.value].sort((a, b) => b.updatedAt - a.updatedAt))
+
+function publicationLabel(customId: string): { text: string, tone: string } {
+  const publication = publicationOf(customId)
+  if (!publication)
+    return { text: '未投稿', tone: 'none' }
+  if (publication.status === 'approved' && publication.publishedRecipeId != null)
+    return { text: `已发布 #${publication.publishedRecipeId}`, tone: 'approved' }
+  if (publication.status === 'rejected')
+    return { text: `已驳回：${publication.reviewNote || '未写明原因'}`, tone: 'rejected' }
+  if (publication.status === 'revoked')
+    return { text: '已撤回', tone: 'rejected' }
+  return { text: '待审核', tone: 'pending' }
+}
 
 watch([keyword, onlyModified], () => {
   limit.value = 100
@@ -207,7 +234,8 @@ async function revert() {
 }
 
 async function exportPatch() {
-  const modified = effective.value.filter(recipe => hasRecipeOverride(recipe.id))
+  // 只导出官方菜谱的修订：发布菜谱的步骤在 note 里，CSV 没有这一列。
+  const modified = effective.value.filter(recipe => hasRecipeOverride(recipe.id) && !isPublished(recipe))
   if (!modified.length) {
     await showAlert('没有可导出的修改', '先编辑至少一道菜谱，再导出补丁 CSV。')
     return
@@ -240,6 +268,9 @@ function metaText(recipe: RecipeItem) {
         </ion-buttons>
         <ion-title>全量菜谱</ion-title>
         <ion-buttons slot="end">
+          <ion-button title="投稿审核" router-link="/admin/submissions">
+            投稿审核
+          </ion-button>
           <ion-button :disabled="!modifiedCount" title="导出补丁 CSV" @click="exportPatch">
             导出补丁
           </ion-button>
@@ -264,16 +295,29 @@ function metaText(recipe: RecipeItem) {
         </ion-toolbar>
       </ion-header>
 
-      <section class="admin-recipes-toolbar" aria-label="筛选">
-        <ion-toggle v-model="onlyModified" justify="space-between">
-          只看已修改
-        </ion-toggle>
-        <p>
-          共 {{ effective.length }} 道，已修改 {{ modifiedCount }} 道<template v-if="filtered.length !== effective.length">
-            · 当前筛出 {{ filtered.length }} 道
-          </template>
-        </p>
-      </section>
+      <ion-segment v-model="segment" class="admin-recipes-segment">
+        <ion-segment-button value="official">
+          <ion-label>官方菜谱</ion-label>
+        </ion-segment-button>
+        <ion-segment-button value="mine">
+          <ion-label>我的菜谱</ion-label>
+        </ion-segment-button>
+      </ion-segment>
+
+      <template v-if="segment === 'official'">
+        <section class="admin-recipes-toolbar" aria-label="筛选">
+          <ion-toggle v-model="onlyModified" justify="space-between">
+            只看已修改
+          </ion-toggle>
+          <p>
+            共 {{ effective.length }} 道，已修订 {{ modifiedCount }} 道<template v-if="publishedCount">
+              · 投稿发布 {{ publishedCount }} 道
+            </template><template v-if="filtered.length !== effective.length">
+              · 当前筛出 {{ filtered.length }} 道
+            </template>
+          </p>
+        </section>
+      </template>
 
       <p v-if="loading" class="admin-recipes-status">
         正在加载菜谱…
@@ -281,6 +325,38 @@ function metaText(recipe: RecipeItem) {
       <p v-else-if="error" class="admin-recipes-status admin-recipes-error" role="alert">
         {{ error }}
       </p>
+
+      <section v-else-if="segment === 'mine'" class="admin-my-recipes">
+        <ul v-if="myRecipes.length" class="admin-my-list">
+          <li v-for="recipe in myRecipes" :key="recipe.customId" class="admin-my-card">
+            <div class="admin-my-head">
+              <h3>{{ recipe.name }}</h3>
+              <span class="admin-my-status" :class="`is-${publicationLabel(recipe.customId).tone}`">
+                {{ publicationLabel(recipe.customId).text }}
+              </span>
+            </div>
+            <p class="admin-my-meta">
+              {{ recipe.stuff.join(' · ') }}
+            </p>
+            <div class="admin-my-actions">
+              <ion-button fill="clear" size="small" router-link="/recipes/mine">
+                在我的菜谱里管理
+              </ion-button>
+              <ion-button
+                v-if="publicationLabel(recipe.customId).tone === 'none'"
+                fill="clear"
+                size="small"
+                router-link="/recipes/mine"
+              >
+                去投稿
+              </ion-button>
+            </div>
+          </li>
+        </ul>
+        <p v-else class="admin-recipes-status">
+          还没有自己的菜谱。
+        </p>
+      </section>
 
       <ion-list v-else-if="visible.length" :inset="true">
         <ion-item
@@ -294,7 +370,10 @@ function metaText(recipe: RecipeItem) {
             <DishLabel :dish="recipe" />
             <p>{{ recipe.stuff.join(' · ') }}</p>
           </ion-label>
-          <span v-if="hasRecipeOverride(recipe.id)" class="admin-recipe-badge" :title="metaText(recipe)">
+          <span v-if="isPublished(recipe)" class="admin-recipe-badge is-published" title="用户投稿发布">
+            投稿
+          </span>
+          <span v-else-if="hasRecipeOverride(recipe.id)" class="admin-recipe-badge" :title="metaText(recipe)">
             已修改
           </span>
           <ion-button slot="end" fill="clear" :aria-label="`编辑${recipe.name}`" @click.stop="edit(recipe)">
@@ -335,6 +414,66 @@ function metaText(recipe: RecipeItem) {
 </template>
 
 <style scoped>
+.admin-recipes-segment {
+  margin: var(--sp-3) var(--sp-4) 0;
+}
+.admin-my-recipes {
+  padding: 0 var(--sp-4) var(--sp-6);
+}
+.admin-my-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.admin-my-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--c-rule);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+}
+.admin-my-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.admin-my-head h3 {
+  margin: 0;
+  color: var(--c-ink);
+  font-size: var(--fs-base);
+}
+.admin-my-status {
+  color: var(--c-ink-3);
+  font-size: var(--fs-xs);
+}
+.admin-my-status.is-approved {
+  color: var(--c-herb);
+}
+.admin-my-status.is-pending {
+  color: var(--c-warn);
+}
+.admin-my-status.is-rejected {
+  color: var(--c-alert);
+}
+.admin-my-meta {
+  margin: 0;
+  color: var(--c-ink-3);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+.admin-my-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-inline-start: -8px;
+}
 .admin-recipes-toolbar {
   margin: var(--sp-3) var(--sp-4);
   padding: var(--sp-3) var(--sp-4);
@@ -375,6 +514,10 @@ function metaText(recipe: RecipeItem) {
   color: var(--c-saffron-ink);
   font-size: var(--fs-xs);
   font-weight: 600;
+}
+.admin-recipe-badge.is-published {
+  background: color-mix(in srgb, var(--c-herb) 18%, var(--c-surface));
+  color: var(--c-herb);
 }
 .admin-recipes-more {
   display: flex;

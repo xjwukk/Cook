@@ -1,12 +1,15 @@
 import type { UserData, UserDataExportFile } from '~/utils/userData'
+import { toSyncCustomRecipe } from '~/utils/customRecipe'
 import { normalizeKitchen } from '~/utils/kitchen'
 import { scopedKey } from '~/utils/storageScope'
 import {
   createEmptyUserData,
   createUserDataExport,
+  mergeCustomRecipes,
   mergeUserData,
   parseUserDataExport,
 } from '~/utils/userData'
+import { customRecipes, setCustomRecipes } from './customRecipe'
 import { favoriteEntries, setFavoriteEntries } from './favorite'
 import { recipeHistories } from './history'
 import { useKitchenStore } from './kitchen'
@@ -21,15 +24,24 @@ export function readLocalUserData(): UserData {
     histories: recipeHistories.value,
     historyRemovals: meta.historyRemovals ?? [],
     historyClearedAt: meta.historyClearedAt ?? 0,
+    customRecipes: customRecipes.value.map(toSyncCustomRecipe),
+    customRecipeRemovals: meta.customRecipeRemovals ?? [],
   }
 }
 
 export function writeLocalUserData(data: UserData): void {
   const kitchen = normalizeKitchen(data.kitchen)
+  // 我的菜谱只做并集，不做替换：账号切换时云端文档不含本机菜谱，
+  // 整体替换会把它们抹掉。删除由墓碑在合并里生效。
+  const { customRecipes: recipes, customRecipeRemovals: removals } = mergeCustomRecipes(
+    [...customRecipes.value.map(toSyncCustomRecipe), ...data.customRecipes],
+    [...(userDataMeta.value.customRecipeRemovals ?? []), ...data.customRecipeRemovals],
+  )
   const meta = {
     ...userDataMeta.value,
     favoriteRemovals: data.favoriteRemovals,
     historyRemovals: data.historyRemovals,
+    customRecipeRemovals: removals,
     historyClearedAt: data.historyClearedAt,
   }
   // Serialize everything before writing; VueUse persistence is asynchronous and
@@ -38,6 +50,7 @@ export function writeLocalUserData(data: UserData): void {
     [scopedKey('kitchen'), JSON.stringify(kitchen)],
     [scopedKey('favorites'), JSON.stringify(data.favorites)],
     [scopedKey('history'), JSON.stringify(data.histories)],
+    [scopedKey('custom-recipes'), JSON.stringify(recipes)],
     [scopedKey('sync'), JSON.stringify(meta)],
   ] as const
   const previous = writes.map(([key]) => localStorage.getItem(key))
@@ -75,6 +88,7 @@ export function writeLocalUserData(data: UserData): void {
   useKitchenStore().replaceData(kitchen, false)
   setFavoriteEntries(data.favorites)
   recipeHistories.value = data.histories
+  setCustomRecipes(recipes)
   userDataMeta.value = meta
 }
 

@@ -212,7 +212,7 @@ async function remove() {
         {{ error }}
       </p>
       <p class="cook-group-footer">
-        自己添加的菜谱只保存在这台设备上，会和收录的菜谱一起参与搭配推荐和「吃什么」。
+        自己添加的菜谱会和收录的菜谱一起参与搭配推荐和「吃什么」。登录后它会同步到你的账号，换设备也能看到；未登录时只保存在这台设备上。
       </p>
 
       <ion-list v-if="existing" :inset="true" class="custom-recipe-delete">

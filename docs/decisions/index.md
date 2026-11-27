@@ -35,3 +35,5 @@
 | [0021](./0021-cooking-assistant)                       | 料理助手：本地粗筛 + 模型挑选        | 已采纳       |
 | [0023](./0023-recipe-overrides)                        | 官方菜谱的全局覆盖层                 | 已采纳       |
 | [0024](./0024-assistant-image-input)                   | 料理助手：上传图片识菜谱             | 已采纳       |
+| [0025](./0025-custom-recipe-cloud-sync)                | 我的菜谱参与账号云同步               | 已采纳       |
+| [0026](./0026-user-published-recipes)                  | 用户投稿发布到全量菜谱               | 已采纳       |

@@ -24,15 +24,18 @@ import {
 import {
   createAiConfigRepository,
   createAiUsageRepository,
+  createCounterRepository,
   createRecipeOverrideRepository,
+  createRecipeSubmissionRepository,
   createSessionRepository,
   createUserDataRepository,
   createUserRepository,
   openDatabase,
 } from './db.mjs'
-import { pickRecipeOverride, validateRecipeOverride } from './recipe-override.mjs'
+import { pickRecipeOverride, PUBLISHED_RECIPE_LIMIT, validateRecipeOverride } from './recipe-override.mjs'
+import { validateSubmission } from './recipe-submission.mjs'
 import { decryptSecret, encryptSecret, loadSecret } from './secret.mjs'
-import { isValidUserData } from './user-data.mjs'
+import { isValidCustomRecipeSync, isValidUserData } from './user-data.mjs'
 
 const PORT = Number(process.env.PORT || 8787)
 const HOST = process.env.HOST || '127.0.0.1'
@@ -44,6 +47,10 @@ const COOKIE_NAME = 'cook_session'
 const BODY_LIMIT = 8 * 1024 * 1024
 // 助手对话会带 base64 图片，请求体比普通接口大；单独放宽但仍低于全局上限。
 const CHAT_BODY_LIMIT = 6 * 1024 * 1024
+// 云端「我的菜谱」的体积闸门：客户端只同步 2 MB 以内，服务端留一倍余量。
+const CUSTOM_RECIPES_BYTE_LIMIT = 4 * 1024 * 1024
+// 发布到全量菜谱的新菜谱从这里开始取 id，避开官方数据集的 id 段。
+const PUBLISHED_ID_BASE = Number(process.env.COOK_PUBLISHED_ID_BASE || 10000)
 const INVITE_CODE = process.env.COOK_INVITE_CODE || ''
 const ALLOWED_ORIGINS = (process.env.COOK_ALLOWED_ORIGINS || '')
   .split(',')
@@ -57,6 +64,8 @@ const userData = createUserDataRepository(db)
 const aiUsage = createAiUsageRepository(db)
 const aiConfig = createAiConfigRepository(db)
 const recipeOverrides = createRecipeOverrideRepository(db)
+const recipeSubmissions = createRecipeSubmissionRepository(db)
+const counters = createCounterRepository(db)
 const secretKey = loadSecret({ dbPath: DB_PATH })
 
 // 料理助手：模型由运营者在服务端配置，Key 只存在服务器上。
@@ -270,6 +279,74 @@ const routes = [
       version: recipeOverrides.version(),
       overrides: recipeOverrides.list().map(row => pickRecipeOverride(row.data)),
     })
+  }],
+
+  // 我亲手改过的官方菜谱：登录即可。「我的菜谱」里用它列出「我操作过的」。
+  ['GET', /^\/api\/recipes\/overrides\/mine$/, async (req, res) => {
+    const user = currentUser(req)
+    if (!user) {
+      sendJson(res, 401, { error: '未登录' })
+      return
+    }
+    // 我直接改过的 + 我投稿发布后又被改过的（作者归属从投稿记录取）。
+    const published = recipeSubmissions.listByUser(user.id)
+      .filter(row => row.status === 'approved' && row.publishedRecipeId != null)
+      .map(row => row.publishedRecipeId)
+    const mine = recipeOverrides.list()
+      .filter(row => row.updatedBy === user.id || published.includes(row.id))
+      .map(row => ({ id: row.id, data: pickRecipeOverride(row.data), updatedAt: row.updatedAt, source: row.source }))
+    sendJson(res, 200, { overrides: mine })
+  }],
+
+  // 投稿到全量菜谱：登录即可，等管理员审核。
+  ['POST', /^\/api\/recipes\/submissions$/, async (req, res) => {
+    const user = currentUser(req)
+    if (!user) {
+      sendJson(res, 401, { error: '未登录' })
+      return
+    }
+    if (tooManyAttempts(`recipe-submit:${user.id}`)) {
+      sendJson(res, 429, { error: '投稿太频繁，请稍后再试' })
+      return
+    }
+    recordAttempt(`recipe-submit:${user.id}`)
+    const body = await readJson(req)
+    const result = validateSubmission(body?.recipe ?? body)
+    if (result.error) {
+      sendJson(res, 400, { error: result.error })
+      return
+    }
+    // customId 用来把投稿对回「我的菜谱」里的那一条，丢了这个对应关系就只能按名字猜。
+    const customId = typeof body?.customId === 'string' ? body.customId.trim().slice(0, 160) : ''
+    const submission = recipeSubmissions.create(result.data, user.id, customId)
+    sendJson(res, 201, {
+      submission: {
+        id: submission.id,
+        customId: submission.customId,
+        status: submission.status,
+        submittedAt: submission.submittedAt,
+      },
+    })
+  }],
+
+  // 我的投稿与状态。
+  ['GET', /^\/api\/recipes\/submissions\/mine$/, async (req, res) => {
+    const user = currentUser(req)
+    if (!user) {
+      sendJson(res, 401, { error: '未登录' })
+      return
+    }
+    const rows = recipeSubmissions.listByUser(user.id).map(row => ({
+      id: row.id,
+      customId: row.customId,
+      status: row.status,
+      submittedAt: row.submittedAt,
+      reviewedAt: row.reviewedAt,
+      reviewNote: row.reviewNote,
+      publishedRecipeId: row.publishedRecipeId,
+      recipe: row.data,
+    }))
+    sendJson(res, 200, { submissions: rows })
   }],
 
   // 助手状态：免登录。登录后额外返回该账号自己的配置是否可用。
@@ -569,8 +646,94 @@ const routes = [
   ['DELETE', /^\/api\/admin\/recipes\/(\d+)$/, async (req, res, match) => {
     if (!requireAdmin(req, res))
       return
-    recipeOverrides.remove(Number(match[1]))
+    const id = Number(match[1])
+    recipeOverrides.remove(id)
+    // 删掉的是一条投稿发布的菜谱时，把对应的投稿标成已撤回。
+    for (const row of recipeSubmissions.list('approved')) {
+      if (row.publishedRecipeId === id)
+        recipeSubmissions.setStatus(row.id, 'revoked', { reviewNote: '管理员撤销了这条发布' })
+    }
     sendJson(res, 204)
+  }],
+
+  // 投稿审核：管理员看得到全部投稿与状态。
+  ['GET', /^\/api\/admin\/recipe-submissions$/, async (req, res) => {
+    if (!requireAdmin(req, res))
+      return
+    const url = new URL(req.url || '/', 'http://localhost')
+    const status = url.searchParams.get('status') || ''
+    const rows = recipeSubmissions.list(status || undefined).map(row => ({
+      id: row.id,
+      status: row.status,
+      submittedBy: row.submittedBy,
+      submittedByName: row.submittedByName,
+      submittedAt: row.submittedAt,
+      reviewedAt: row.reviewedAt,
+      reviewNote: row.reviewNote,
+      publishedRecipeId: row.publishedRecipeId,
+      recipe: row.data,
+    }))
+    sendJson(res, 200, { submissions: rows })
+  }],
+
+  // 审核通过：分配正式 id 并写入覆盖层，立刻对所有访客可见。
+  ['POST', /^\/api\/admin\/recipe-submissions\/(\d+)\/approve$/, async (req, res, match) => {
+    const admin = requireAdmin(req, res)
+    if (!admin)
+      return
+    const row = recipeSubmissions.get(Number(match[1]))
+    if (!row) {
+      sendJson(res, 404, { error: '投稿不存在' })
+      return
+    }
+    if (row.status === 'approved') {
+      sendJson(res, 400, { error: '这条投稿已经发布过了' })
+      return
+    }
+    if (row.status === 'rejected') {
+      sendJson(res, 400, { error: '这条投稿已被驳回' })
+      return
+    }
+    // id 由服务端分配：计数器单调递增，删掉已发布的菜谱也不会把 id 发回去。
+    const id = counters.allocatePublishedRecipeId(PUBLISHED_ID_BASE)
+    const body = await readJson(req)
+    const reviewNote = typeof body?.reviewNote === 'string' ? body.reviewNote.trim().slice(0, 500) : ''
+    const result = validateRecipeOverride(
+      { ...row.data, id, note: row.data.note ?? '' },
+      id,
+      { limit: PUBLISHED_RECIPE_LIMIT, allowEmptyTools: true },
+    )
+    if (result.error) {
+      sendJson(res, 400, { error: result.error })
+      return
+    }
+    recipeOverrides.put(id, result.data, admin.id, 'submission')
+    const updated = recipeSubmissions.setStatus(row.id, 'approved', {
+      reviewedBy: admin.id,
+      reviewNote,
+      publishedRecipeId: id,
+    })
+    sendJson(res, 200, { submission: { id: updated.id, status: updated.status, publishedRecipeId: id } })
+  }],
+
+  // 驳回：必须写清原因，用户才知道要改什么。
+  ['POST', /^\/api\/admin\/recipe-submissions\/(\d+)\/reject$/, async (req, res, match) => {
+    const admin = requireAdmin(req, res)
+    if (!admin)
+      return
+    const row = recipeSubmissions.get(Number(match[1]))
+    if (!row) {
+      sendJson(res, 404, { error: '投稿不存在' })
+      return
+    }
+    const body = await readJson(req)
+    const reviewNote = typeof body?.reviewNote === 'string' ? body.reviewNote.trim() : ''
+    if (!reviewNote) {
+      sendJson(res, 400, { error: '驳回时请写明原因' })
+      return
+    }
+    recipeSubmissions.setStatus(row.id, 'rejected', { reviewedBy: admin.id, reviewNote: reviewNote.slice(0, 500) })
+    sendJson(res, 200, { ok: true })
   }],
 
   ['DELETE', /^\/api\/admin\/users\/(\d+)$/, async (req, res, match) => {
@@ -645,17 +808,28 @@ const routes = [
       return
     }
     const body = await readJson(req)
-    if (!isValidUserData(body.data)) {
+    if (!isValidUserData(body.data) || !isValidCustomRecipeSync(body.data)) {
       sendJson(res, 400, { error: '数据格式不正确' })
       return
     }
     // Old v1 clients do not know the kitchen extension. Their full-document
     // upload must not erase inventory or its permanent deletion tombstones.
     const data = body.data
+    const previous = userData.get(user.id)?.data
     if (data.kitchen === undefined) {
-      const previousKitchen = userData.get(user.id)?.data?.kitchen
+      const previousKitchen = previous?.kitchen
       if (previousKitchen !== undefined)
         data.kitchen = previousKitchen
+    }
+    // 同理：不懂「我的菜谱」同步的旧客户端不能把云端的菜谱抹掉。
+    // 判定必须是 undefined 而不是 falsy——空数组表示「我全删了」。
+    if (data.customRecipes === undefined && previous?.customRecipes !== undefined)
+      data.customRecipes = previous.customRecipes
+    if (data.customRecipeRemovals === undefined && previous?.customRecipeRemovals !== undefined)
+      data.customRecipeRemovals = previous.customRecipeRemovals
+    if (Array.isArray(data.customRecipes) && JSON.stringify(data.customRecipes).length > CUSTOM_RECIPES_BYTE_LIMIT) {
+      sendJson(res, 413, { error: '私人菜谱超出同步上限' })
+      return
     }
     const saved = userData.put(user.id, data)
     sendJson(res, 200, saved)

@@ -42,6 +42,11 @@ export interface RecipeItem {
    */
   tools: string[]
   /**
+   * 文字做法步骤。收录菜谱的步骤来自 packages/data/recipe-text.json；
+   * 自建菜谱与投稿发布的菜谱没有那个文件，用这里的内容代替
+   */
+  note?: string
+  /**
    * 视频质量分 0～100，`pnpm convert` 按 packages/data/video-stats.json 算好写入；
    * 没有时按 DEFAULT_RECIPE_SCORE。只在缺的食材、用上的食材都一样时决定先后
    */

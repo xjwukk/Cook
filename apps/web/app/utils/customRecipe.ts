@@ -1,3 +1,4 @@
+import type { PrivateRecipe } from '@yunyoujun/cook/custom-recipes'
 import type { RecipeItem } from '~/types'
 import { isPrivateRecipeURL } from '@yunyoujun/cook/custom-recipes'
 import { uniqueStuff } from '@yunyoujun/cook/recommend'
@@ -42,6 +43,30 @@ export function parseRecipeSource(text: string): Pick<RecipeItem, 'bv' | 'link'>
 
 export function isCustomRecipe(recipe: RecipeItem): recipe is CustomRecipe {
   return typeof (recipe as Partial<CustomRecipe>).customId === 'string'
+}
+
+/**
+ * 投影成同步文档里的样子：只保留私人菜谱协议允许的字段。
+ *
+ * 存进本机的菜谱对象不能加任何新键——validatePrivateRecipe 遇到未知键会
+ * 让整份数组读不出来，所以同步、投稿状态都另存。
+ */
+export function toSyncCustomRecipe(recipe: CustomRecipe): PrivateRecipe {
+  return {
+    customId: recipe.customId,
+    name: recipe.name,
+    stuff: [...recipe.stuff],
+    tools: [...recipe.tools],
+    ...(recipe.bv ? { bv: recipe.bv } : {}),
+    ...(recipe.link ? { link: recipe.link } : {}),
+    ...(recipe.note ? { note: recipe.note } : {}),
+    ...(recipe.tags?.length ? { tags: [...recipe.tags] } : {}),
+    ...(recipe.methods?.length ? { methods: [...recipe.methods] } : {}),
+    ...(recipe.difficulty ? { difficulty: recipe.difficulty } : {}),
+    createdAt: recipe.createdAt,
+    updatedAt: recipe.updatedAt,
+    ...(recipe.copiedFrom ? { copiedFrom: recipe.copiedFrom } : {}),
+  }
 }
 
 export function createCustomRecipeId() {

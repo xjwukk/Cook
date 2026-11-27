@@ -60,8 +60,29 @@ export function openDatabase(file) {
     CREATE TABLE IF NOT EXISTS recipe_overrides (
       recipe_id INTEGER PRIMARY KEY,
       data TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'admin',
       updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
       updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS recipe_submissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      data TEXT NOT NULL,
+      custom_id TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending',
+      submitted_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      submitted_at INTEGER NOT NULL,
+      reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      reviewed_at INTEGER,
+      review_note TEXT,
+      published_recipe_id INTEGER
+    );
+
+    CREATE INDEX IF NOT EXISTS recipe_submissions_status ON recipe_submissions(status, id);
+
+    CREATE TABLE IF NOT EXISTS counters (
+      name TEXT PRIMARY KEY,
+      value INTEGER NOT NULL
     );
   `)
 
@@ -74,6 +95,16 @@ export function openDatabase(file) {
   const aiColumns = db.prepare('PRAGMA table_info(ai_config)').all()
   if (!aiColumns.some(column => column.name === 'vision_model'))
     db.exec('ALTER TABLE ai_config ADD COLUMN vision_model TEXT NOT NULL DEFAULT \'\'')
+
+  // 旧库升级：recipe_overrides 没有 source 列时补上，'admin' 表示管理员修订。
+  const overrideColumns = db.prepare('PRAGMA table_info(recipe_overrides)').all()
+  if (!overrideColumns.some(column => column.name === 'source'))
+    db.exec('ALTER TABLE recipe_overrides ADD COLUMN source TEXT NOT NULL DEFAULT \'admin\'')
+
+  // 旧库升级：投稿表没有 custom_id 列时补上，用来把投稿对回「我的菜谱」里的那一条。
+  const submissionColumns = db.prepare('PRAGMA table_info(recipe_submissions)').all()
+  if (!submissionColumns.some(column => column.name === 'custom_id'))
+    db.exec('ALTER TABLE recipe_submissions ADD COLUMN custom_id TEXT NOT NULL DEFAULT \'\'')
 
   return db
 }
@@ -208,6 +239,7 @@ export function createRecipeOverrideRepository(db) {
     return {
       id: row.recipeId,
       data: JSON.parse(row.data),
+      source: row.source ?? 'admin',
       updatedAt: row.updatedAt,
       updatedBy: row.updatedBy ?? null,
       updatedByName: row.updatedByName ?? null,
@@ -217,7 +249,7 @@ export function createRecipeOverrideRepository(db) {
   return {
     list() {
       return db.prepare(`
-        SELECT o.recipe_id AS recipeId, o.data, o.updated_at AS updatedAt,
+        SELECT o.recipe_id AS recipeId, o.data, o.source, o.updated_at AS updatedAt,
                o.updated_by AS updatedBy, u.username AS updatedByName
         FROM recipe_overrides o
         LEFT JOIN users u ON u.id = o.updated_by
@@ -226,23 +258,24 @@ export function createRecipeOverrideRepository(db) {
     },
     get(id) {
       return rowToRecord(db.prepare(`
-        SELECT o.recipe_id AS recipeId, o.data, o.updated_at AS updatedAt,
+        SELECT o.recipe_id AS recipeId, o.data, o.source, o.updated_at AS updatedAt,
                o.updated_by AS updatedBy, u.username AS updatedByName
         FROM recipe_overrides o
         LEFT JOIN users u ON u.id = o.updated_by
         WHERE o.recipe_id = ?
       `).get(id))
     },
-    put(id, data, userId) {
+    put(id, data, userId, source = 'admin') {
       const now = Date.now()
       db.prepare(`
-        INSERT INTO recipe_overrides (recipe_id, data, updated_by, updated_at)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO recipe_overrides (recipe_id, data, source, updated_by, updated_at)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(recipe_id) DO UPDATE SET
           data = excluded.data,
+          source = excluded.source,
           updated_by = excluded.updated_by,
           updated_at = excluded.updated_at
-      `).run(id, JSON.stringify(data), userId, now)
+      `).run(id, JSON.stringify(data), source, userId, now)
       return { updatedAt: now }
     },
     remove(id) {
@@ -251,6 +284,100 @@ export function createRecipeOverrideRepository(db) {
     /** 覆盖层版本号：最后修改时间；没有覆盖时是 0 */
     version() {
       return db.prepare('SELECT MAX(updated_at) AS version FROM recipe_overrides').get()?.version ?? 0
+    },
+  }
+}
+
+/**
+ * 用户投稿：提交到全量菜谱的菜谱，等管理员审核。
+ * 审核通过后由管理员分配正式 id 并写入覆盖层，投稿行只记录状态。
+ */
+export function createRecipeSubmissionRepository(db) {
+  const rowToRecord = (row) => {
+    if (!row)
+      return null
+    return {
+      id: row.id,
+      data: JSON.parse(row.data),
+      customId: row.customId ?? '',
+      status: row.status,
+      submittedBy: row.submittedBy ?? null,
+      submittedByName: row.submittedByName ?? null,
+      submittedAt: row.submittedAt,
+      reviewedBy: row.reviewedBy ?? null,
+      reviewedAt: row.reviewedAt ?? null,
+      reviewNote: row.reviewNote ?? '',
+      publishedRecipeId: row.publishedRecipeId ?? null,
+    }
+  }
+
+  const SELECT = `
+    SELECT s.id, s.data, s.custom_id AS customId, s.status, s.submitted_at AS submittedAt,
+           s.submitted_by AS submittedBy, u.username AS submittedByName,
+           s.reviewed_by AS reviewedBy, s.reviewed_at AS reviewedAt,
+           s.review_note AS reviewNote, s.published_recipe_id AS publishedRecipeId
+    FROM recipe_submissions s
+    LEFT JOIN users u ON u.id = s.submitted_by
+  `
+
+  return {
+    list(status) {
+      const rows = status
+        ? db.prepare(`${SELECT} WHERE s.status = ? ORDER BY s.id DESC`).all(status)
+        : db.prepare(`${SELECT} ORDER BY s.id DESC`).all()
+      return rows.map(rowToRecord)
+    },
+    listByUser(userId) {
+      return db.prepare(`${SELECT} WHERE s.submitted_by = ? ORDER BY s.id DESC`).all(userId).map(rowToRecord)
+    },
+    get(id) {
+      return rowToRecord(db.prepare(`${SELECT} WHERE s.id = ?`).get(id))
+    },
+    create(data, userId, customId = '') {
+      const now = Date.now()
+      const result = db.prepare(`
+        INSERT INTO recipe_submissions (data, custom_id, status, submitted_by, submitted_at)
+        VALUES (?, ?, 'pending', ?, ?)
+      `).run(JSON.stringify(data), customId, userId, now)
+      return this.get(Number(result.lastInsertRowid))
+    },
+    setStatus(id, status, { reviewedBy = null, reviewNote = '', publishedRecipeId = null } = {}) {
+      db.prepare(`
+        UPDATE recipe_submissions
+        SET status = ?, reviewed_by = ?, reviewed_at = ?, review_note = ?, published_recipe_id = ?
+        WHERE id = ?
+      `).run(status, reviewedBy, Date.now(), reviewNote, publishedRecipeId, id)
+      return this.get(id)
+    },
+  }
+}
+
+/**
+ * 单调计数器：发布到全量菜谱的新菜谱从这里取 id。
+ * 计数器只增不减——删掉一条已发布的菜谱也不会把它的 id 重新发出去。
+ */
+export function createCounterRepository(db) {
+  return {
+    /**
+     * 取下一个 id 并把计数器往前推。
+     * floor 是发布 id 的预留段起点，用来避开官方数据集的 id 段。
+     */
+    allocatePublishedRecipeId(floor) {
+      db.exec('BEGIN IMMEDIATE')
+      try {
+        const row = db.prepare('SELECT value FROM counters WHERE name = ?').get('published_recipe_id')
+        const current = Number(row?.value) || 0
+        const highest = Number(db.prepare('SELECT MAX(recipe_id) AS value FROM recipe_overrides WHERE recipe_id >= ?').get(floor)?.value) || 0
+        const next = Math.max(current, highest, floor)
+        db.prepare(`
+          INSERT INTO counters (name, value) VALUES (?, ?)
+          ON CONFLICT(name) DO UPDATE SET value = excluded.value
+        `).run('published_recipe_id', next + 1)
+        return next
+      }
+      finally {
+        db.exec('COMMIT')
+      }
     },
   }
 }

@@ -78,6 +78,12 @@ const bv = ref('')
 const link = ref('')
 const errors = ref<string[]>([])
 
+/** 投稿发布的菜谱 id 从高位段开始；它们的步骤在 note 里，可以在线编辑。 */
+const PUBLISHED_ID_BASE = 10000
+const isPublishedRecipe = computed(() => typeof props.recipe?.id === 'number' && props.recipe.id >= PUBLISHED_ID_BASE)
+/** 发布菜谱的步骤正文：官方菜谱的步骤来自 recipe-text.json，不在这里编辑。 */
+const note = ref('')
+
 const methodOptions = computed(() => [
   ...METHODS,
   ...selectedMethods.value.filter(method => !METHODS.includes(method)),
@@ -97,6 +103,7 @@ function fill(recipe: RecipeItem | null) {
   tagText.value = recipe?.tags?.join('、') ?? ''
   bv.value = recipe?.bv ?? ''
   link.value = recipe?.link ?? ''
+  note.value = recipe?.note ?? ''
   errors.value = []
 }
 
@@ -148,6 +155,7 @@ function buildRecipe(): RecipeItem | null {
     tags: parseList(tagText.value),
     bv: cleanBv(bv.value) ?? '',
     link: link.value.trim(),
+    ...(note.value.trim() ? { note: note.value.trim() } : {}),
   }
 }
 
@@ -301,6 +309,25 @@ function cancel() {
         </ion-item>
       </ion-list>
 
+      <ion-list :inset="true">
+        <ion-item v-if="isPublishedRecipe">
+          <ion-textarea
+            v-model="note"
+            label="步骤"
+            label-placement="stacked"
+            placeholder="每行一步，例如：1. 锅中倒油烧热"
+            :auto-grow="true"
+            :rows="6"
+            @ion-input="errors = []"
+          />
+        </ion-item>
+        <ion-item v-else>
+          <ion-label class="admin-editor-note-hint">
+            <p>这道菜的步骤来自收录的图文正文，不在线编辑。要改步骤请走 recipe.csv 的流程。</p>
+          </ion-label>
+        </ion-item>
+      </ion-list>
+
       <ul v-if="errors.length" class="admin-editor-errors" role="alert">
         <li v-for="message in errors" :key="message">
           {{ message }}
@@ -334,6 +361,13 @@ function cancel() {
   color: var(--c-alert);
   font-size: var(--fs-sm);
   line-height: 1.7;
+}
+.admin-editor-note-hint p {
+  margin: 0;
+  color: var(--c-ink-3);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  white-space: normal;
 }
 .admin-editor-revert {
   margin-bottom: 40px;

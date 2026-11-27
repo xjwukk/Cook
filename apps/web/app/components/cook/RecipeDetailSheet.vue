@@ -42,7 +42,10 @@ const groups = computed(() => {
   ].filter(group => group.items.length)
 })
 
-/** 文字步骤：官方菜谱取 recipe-text.json 的「操作」，自建菜谱用备注 */
+/**
+ * 文字步骤：官方菜谱取 recipe-text.json 的「操作」；
+ * 自建菜谱和投稿发布的菜谱没有那个文件，用菜谱自带的 note。
+ */
 interface StepBlock {
   type: 'paragraph' | 'ordered' | 'unordered'
   text?: string
@@ -56,6 +59,11 @@ let stepRequest = 0
 watch(() => props.recipe?.id, async (id) => {
   const request = ++stepRequest
   rawSteps.value = []
+  // 自建菜谱没有数字 id，但有自己的步骤备注。
+  if (props.recipe?.note?.trim()) {
+    stepsLoading.value = false
+    return
+  }
   if (typeof id !== 'number') {
     stepsLoading.value = false
     return
@@ -85,6 +93,8 @@ const steps = computed<StepBlock[]>(() => {
 })
 
 const custom = computed(() => props.recipe && isCustomRecipe(props.recipe) ? props.recipe : undefined)
+/** 菜谱自带的做法步骤：自建菜谱与投稿发布的菜谱都有，官方菜谱的步骤在 recipe-text.json。 */
+const noteText = computed(() => props.recipe?.note?.trim() ?? '')
 const rStore = useRecipeStore()
 const institutionEntry = computed(() => rStore.discoveryScene === 'institutional-low-gi'
   ? rStore.institutionalReview(props.recipe?.id)
@@ -231,12 +241,12 @@ function onPresented() {
         <h3 class="recipe-detail-steps-title">
           步骤
         </h3>
-        <div v-if="custom?.note || steps.length || stepsLoading" class="recipe-detail-steps">
+        <div v-if="noteText || steps.length || stepsLoading" class="recipe-detail-steps">
           <p v-if="stepsLoading" class="recipe-detail-step-loading">
             正在加载文字步骤…
           </p>
-          <p v-else-if="custom?.note" class="recipe-detail-step-paragraph">
-            {{ custom.note }}
+          <p v-else-if="noteText" class="recipe-detail-step-paragraph">
+            {{ noteText }}
           </p>
           <template v-for="(step, index) in steps" :key="index">
             <p v-if="step.type === 'paragraph'" class="recipe-detail-step-paragraph">
@@ -274,7 +284,7 @@ function onPresented() {
 
       <p class="cook-group-footer recipe-detail-note">
         <template v-if="custom">
-          这是你自己添加的菜谱，只保存在这台设备上。
+          这是你自己添加的菜谱。登录后会同步到你的账号，换设备也能看到。
         </template>
         <template v-else>
           食材来自菜谱记录，用量和调味以{{ reviewedTextLink || !recipe.bv ? '做法原文' : '视频' }}为准。

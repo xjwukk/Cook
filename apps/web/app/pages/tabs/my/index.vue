@@ -126,6 +126,13 @@ function handleSyncClick(): void {
             <p>浏览与修改收录的 887 道菜谱</p>
           </ion-label>
         </ion-item>
+        <ion-item v-if="user?.role === 'admin'" router-link="/admin/submissions" :detail="true">
+          <CookListIcon slot="start" :icon="ioniconsCloudUploadOutline" color="#2f7a5a" />
+          <ion-label>
+            <h2>投稿审核</h2>
+            <p>审核用户投稿到全量菜谱的菜谱</p>
+          </ion-label>
+        </ion-item>
       </ion-list>
 
       <ion-list :inset="true">

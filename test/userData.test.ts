@@ -1,9 +1,11 @@
+import type { PrivateRecipe } from '@yunyoujun/cook/custom-recipes'
 import type { RecipeItem } from '../apps/web/app/types'
 import type { UserData } from '../apps/web/app/utils/userData'
 import { describe, expect, it } from 'vitest'
 import {
   createEmptyUserData,
   createUserDataExport,
+  fitCustomRecipesToBudget,
   HISTORY_LIMIT,
   isSameUserData,
   mergeUserData,
@@ -165,7 +167,89 @@ describe('normalizeUserData', () => {
       histories: [{ recipe: { name: 'A', stuff: ['土豆'], tools: [], tags: ['快手'] }, time: NOW }],
       historyRemovals: [],
       historyClearedAt: 0,
+      customRecipes: [],
+      customRecipeRemovals: [],
     })
+  })
+})
+
+describe('mergeCustomRecipes', () => {
+  function custom(id: string, updatedAt: number, name = id): PrivateRecipe {
+    return { customId: id, name, stuff: ['虾'], tools: [], createdAt: 1, updatedAt }
+  }
+
+  it('unions recipes from both sides', () => {
+    const merged = mergeUserData(
+      data({ customRecipes: [custom('a', NOW - 5)] }),
+      data({ customRecipes: [custom('b', NOW - 6)] }),
+      NOW,
+    )
+    expect(merged.customRecipes.map(item => item.customId)).toEqual(['a', 'b'])
+  })
+
+  it('keeps the newest edit of the same recipe', () => {
+    const merged = mergeUserData(
+      data({ customRecipes: [custom('a', NOW - 5, '旧名字')] }),
+      data({ customRecipes: [custom('a', NOW - 1, '新名字')] }),
+      NOW,
+    )
+    expect(merged.customRecipes).toHaveLength(1)
+    expect(merged.customRecipes[0]!.name).toBe('新名字')
+  })
+
+  it('lets a removal at the same instant win over the edit', () => {
+    const merged = mergeUserData(
+      data({ customRecipes: [custom('a', NOW)] }),
+      data({ customRecipeRemovals: [{ customId: 'a', time: NOW }] }),
+      NOW,
+    )
+    expect(merged.customRecipes).toHaveLength(0)
+    expect(merged.customRecipeRemovals).toHaveLength(1)
+  })
+
+  it('resurrects a recipe re-added after the deletion', () => {
+    const merged = mergeUserData(
+      data({ customRecipeRemovals: [{ customId: 'a', time: NOW - 10 }] }),
+      data({ customRecipes: [custom('a', NOW - 5)] }),
+      NOW,
+    )
+    expect(merged.customRecipes).toHaveLength(1)
+    expect(merged.customRecipeRemovals).toHaveLength(0)
+  })
+
+  it('is commutative and idempotent with custom recipes', () => {
+    const a = data({
+      customRecipes: [custom('a', NOW - 5), custom('b', NOW - 3)],
+      customRecipeRemovals: [{ customId: 'c', time: NOW - 20 }],
+    })
+    const b = data({
+      customRecipes: [custom('b', NOW - 1, '改过')],
+      customRecipeRemovals: [{ customId: 'a', time: NOW - 2 }],
+    })
+    const once = mergeUserData(a, b, NOW)
+    expect(isSameUserData(mergeUserData(a, b, NOW), mergeUserData(b, a, NOW))).toBe(true)
+    expect(isSameUserData(mergeUserData(once, once, NOW), once)).toBe(true)
+  })
+})
+
+describe('fitCustomRecipesToBudget', () => {
+  function custom(id: string, updatedAt: number, noteLength = 10): PrivateRecipe {
+    return { customId: id, name: id, stuff: ['虾'], tools: [], note: 'x'.repeat(noteLength), createdAt: 1, updatedAt }
+  }
+
+  it('keeps everything inside the budget', () => {
+    const { recipes, omitted } = fitCustomRecipesToBudget([custom('a', 1), custom('b', 2)], 10_000)
+    expect(recipes.map(item => item.customId).sort()).toEqual(['a', 'b'])
+    expect(omitted).toBe(0)
+  })
+
+  it('keeps the newest ones and reports the omission count', () => {
+    const { recipes, omitted } = fitCustomRecipesToBudget(
+      [custom('old', 1, 500), custom('new', 10, 500), custom('mid', 5, 500)],
+      1200,
+    )
+    expect(recipes.map(item => item.customId)).toEqual(['new', 'mid'])
+    expect(omitted).toBe(1)
   })
 })
 

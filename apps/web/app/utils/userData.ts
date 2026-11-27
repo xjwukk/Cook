@@ -1,5 +1,7 @@
+import type { PrivateRecipe } from '@yunyoujun/cook/custom-recipes'
 import type { KitchenData } from './kitchen'
 import type { RecipeItem } from '~/types'
+import { validatePrivateRecipe } from '@yunyoujun/cook/custom-recipes'
 import { createEmptyKitchen, mergeKitchen, normalizeKitchen } from './kitchen'
 
 /**
@@ -13,12 +15,18 @@ export const USER_DATA_VERSION = 1
 export const HISTORY_LIMIT = 200
 export const TOMBSTONE_LIMIT = 500
 export const TOMBSTONE_TTL = 180 * 24 * 60 * 60 * 1000
+/** 我的菜谱同步：条数上限与体积上限，超出的部分只留在本机。 */
+export const CUSTOM_RECIPE_SYNC_LIMIT = 2000
+export const CUSTOM_RECIPE_SYNC_BUDGET_BYTES = 2 * 1024 * 1024
+export const CUSTOM_RECIPE_TOMBSTONE_LIMIT = 1000
 
 export interface FavoriteEntry { id: number, time: number }
 export interface FavoriteRemoval { id: number, time: number }
 export interface HistoryEntry { recipe: RecipeItem, time: number }
 /** Identifies one removed history record by its recipe name and visit time. */
 export interface HistoryRemoval { name: string, time: number }
+/** Identifies one removed private recipe by its id and removal time. */
+export interface CustomRecipeRemoval { customId: string, time: number }
 
 export interface UserData {
   kitchen: KitchenData
@@ -28,6 +36,9 @@ export interface UserData {
   historyRemovals: HistoryRemoval[]
   /** Records visited at or before this time were cleared. */
   historyClearedAt: number
+  /** 用户自己添加的菜谱：与备份文件同一套字段口径。 */
+  customRecipes: PrivateRecipe[]
+  customRecipeRemovals: CustomRecipeRemoval[]
 }
 
 export interface UserDataExportFile extends UserData {
@@ -44,6 +55,8 @@ export function createEmptyUserData(): UserData {
     histories: [],
     historyRemovals: [],
     historyClearedAt: 0,
+    customRecipes: [],
+    customRecipeRemovals: [],
   }
 }
 
@@ -60,7 +73,113 @@ export function mergeUserData(a: UserData, b: UserData, now = Date.now()): UserD
     historyClearedAt,
     now,
   )
-  return { kitchen: mergeKitchen(a.kitchen, b.kitchen), favorites, favoriteRemovals, histories, historyRemovals, historyClearedAt }
+  const { customRecipes, customRecipeRemovals } = mergeCustomRecipes(
+    [...a.customRecipes, ...b.customRecipes],
+    [...a.customRecipeRemovals, ...b.customRecipeRemovals],
+    now,
+  )
+  return {
+    kitchen: mergeKitchen(a.kitchen, b.kitchen),
+    favorites,
+    favoriteRemovals,
+    histories,
+    historyRemovals,
+    historyClearedAt,
+    customRecipes,
+    customRecipeRemovals,
+  }
+}
+
+/** 同一道菜谱的规范写法：字段顺序固定，两台设备算出来的字符串才能一致。 */
+function canonicalCustomRecipe(recipe: PrivateRecipe): string {
+  return JSON.stringify([
+    recipe.customId,
+    recipe.name,
+    recipe.stuff,
+    recipe.tools,
+    recipe.bv ?? '',
+    recipe.link ?? '',
+    recipe.note ?? '',
+    recipe.tags ?? [],
+    recipe.methods ?? [],
+    recipe.difficulty ?? '',
+    recipe.createdAt,
+    recipe.updatedAt,
+    recipe.copiedFrom ?? '',
+  ])
+}
+
+/**
+ * 同一道菜谱谁赢：更新时间新的赢；时间一样时取规范写法字典序小的，
+ * 这样两台设备合并的结果一定相同（合并必须可交换）。
+ */
+function compareCustomRecipe(a: PrivateRecipe, b: PrivateRecipe): number {
+  if (a.updatedAt !== b.updatedAt)
+    return a.updatedAt - b.updatedAt
+  const left = canonicalCustomRecipe(a)
+  const right = canonicalCustomRecipe(b)
+  return left < right ? 1 : left > right ? -1 : 0
+}
+
+/**
+ * 合并我的菜谱：按 customId 取最新的一份，删除墓碑胜过同刻写入。
+ * 与 mergeFavorites 同一套写法，保证可交换、幂等。
+ */
+export function mergeCustomRecipes(
+  adds: PrivateRecipe[],
+  removals: CustomRecipeRemoval[],
+  now = Date.now(),
+): Pick<UserData, 'customRecipes' | 'customRecipeRemovals'> {
+  const latestAdd = new Map<string, PrivateRecipe>()
+  for (const recipe of Array.isArray(adds) ? adds : []) {
+    if (!recipe || typeof recipe.customId !== 'string' || !recipe.customId)
+      continue
+    const previous = latestAdd.get(recipe.customId)
+    if (!previous || compareCustomRecipe(recipe, previous) > 0)
+      latestAdd.set(recipe.customId, recipe)
+  }
+  const latestRemoval = latestByKey(Array.isArray(removals) ? removals : [], removal => removal.customId)
+
+  // 同一时刻删除胜过写入。
+  const customRecipes = [...latestAdd.values()]
+    .filter(recipe => (latestRemoval.get(recipe.customId)?.time ?? -1) < recipe.updatedAt)
+    .sort((a, b) => a.customId < b.customId ? -1 : a.customId > b.customId ? 1 : 0)
+
+  // 写入严格晚于删除的，墓碑才作废（重新加回来的菜谱会复活）。
+  const customRecipeRemovals = pruneTombstones(
+    [...latestRemoval.values()].filter(removal => (latestAdd.get(removal.customId)?.updatedAt ?? -1) <= removal.time),
+    now,
+    (a, b) => a.customId < b.customId ? -1 : a.customId > b.customId ? 1 : 0,
+    CUSTOM_RECIPE_TOMBSTONE_LIMIT,
+  )
+    .map(({ customId, time }) => ({ customId, time }))
+    .sort((x, y) => y.time - x.time || (x.customId < y.customId ? -1 : x.customId > y.customId ? 1 : 0))
+
+  return { customRecipes, customRecipeRemovals }
+}
+
+/**
+ * 挑出能放进同步文档的菜谱：按更新时间从新到旧装，装不下的跳过。
+ * 是合并结果的纯函数 → 两台设备选出的子集一致，不会来回抖。
+ */
+export function fitCustomRecipesToBudget(
+  recipes: PrivateRecipe[],
+  budget = CUSTOM_RECIPE_SYNC_BUDGET_BYTES,
+): { recipes: PrivateRecipe[], omitted: number } {
+  const sorted = [...(Array.isArray(recipes) ? recipes : [])]
+    .sort((a, b) => b.updatedAt - a.updatedAt || (a.customId < b.customId ? -1 : a.customId > b.customId ? 1 : 0))
+  const kept: PrivateRecipe[] = []
+  let bytes = 0
+  for (const recipe of sorted) {
+    if (kept.length >= CUSTOM_RECIPE_SYNC_LIMIT)
+      break
+    const size = JSON.stringify(recipe).length
+    if (bytes + size > budget)
+      continue
+    kept.push(recipe)
+    bytes += size
+  }
+  return { recipes: kept, omitted: sorted.length - kept.length }
 }
 
 export function isSameUserData(a: UserData, b: UserData): boolean {
@@ -149,7 +268,12 @@ function historyKey(name: string, time: number): string {
 }
 
 function latestBy<T extends { time: number }>(list: T[], key: (item: T) => number): Map<number, T> {
-  const map = new Map<number, T>()
+  return latestByKey(list, key)
+}
+
+/** 与 latestBy 相同，但键可以是字符串（我的菜谱用 customId）。 */
+function latestByKey<T extends { time: number }, K>(list: T[], key: (item: T) => K): Map<K, T> {
+  const map = new Map<K, T>()
   for (const item of list) {
     const current = map.get(key(item))
     if (!current || item.time > current.time)
@@ -167,11 +291,11 @@ function uniqueBy<T>(list: T[], key: (item: T) => string): T[] {
   return [...map.values()]
 }
 
-function pruneTombstones<T extends { time: number }>(list: T[], now: number, breakTie: (a: T, b: T) => number): T[] {
+function pruneTombstones<T extends { time: number }>(list: T[], now: number, breakTie: (a: T, b: T) => number, limit = TOMBSTONE_LIMIT): T[] {
   return list
     .filter(item => item.time >= now - TOMBSTONE_TTL)
     .sort((x, y) => y.time - x.time || breakTie(x, y))
-    .slice(0, TOMBSTONE_LIMIT)
+    .slice(0, limit)
 }
 
 function toPlain(data: UserData): UserData {
@@ -182,6 +306,8 @@ function toPlain(data: UserData): UserData {
     histories: data.histories.map(({ recipe, time }) => ({ recipe, time })),
     historyRemovals: data.historyRemovals.map(({ name, time }) => ({ name, time })),
     historyClearedAt: data.historyClearedAt,
+    customRecipes: data.customRecipes.map(recipe => ({ ...recipe })),
+    customRecipeRemovals: data.customRecipeRemovals.map(({ customId, time }) => ({ customId, time })),
   }
 }
 
@@ -202,6 +328,8 @@ export function normalizeUserData(value: unknown): UserData | null {
     histories: readList(value.histories, readHistory),
     historyRemovals: readList(value.historyRemovals, readHistoryRemoval),
     historyClearedAt: isTime(value.historyClearedAt) ? value.historyClearedAt : 0,
+    customRecipes: readList(value.customRecipes, readCustomRecipe),
+    customRecipeRemovals: readList(value.customRecipeRemovals, readCustomRecipeRemoval),
   }
 }
 
@@ -243,6 +371,22 @@ function readHistoryRemoval(value: unknown): HistoryRemoval | null {
   if (!isRecord(value) || !isName(value.name) || !isTime(value.time))
     return null
   return { name: value.name, time: value.time }
+}
+
+/** 我的菜谱：与备份文件用同一套校验，非法的整条丢掉，不影响其余。 */
+function readCustomRecipe(value: unknown): PrivateRecipe | null {
+  try {
+    return validatePrivateRecipe(value)
+  }
+  catch {
+    return null
+  }
+}
+
+function readCustomRecipeRemoval(value: unknown): CustomRecipeRemoval | null {
+  if (!isRecord(value) || typeof value.customId !== 'string' || !value.customId || !isTime(value.time))
+    return null
+  return { customId: value.customId, time: value.time }
 }
 
 function readHistory(value: unknown): HistoryEntry | null {

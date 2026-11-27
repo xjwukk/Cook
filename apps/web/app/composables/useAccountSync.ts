@@ -1,4 +1,6 @@
+import type { UserData } from '~/utils/userData'
 import { createSharedComposable, watchDebounced } from '@vueuse/core'
+import { customRecipes } from '~/composables/store/customRecipe'
 import { favoriteEntries } from '~/composables/store/favorite'
 import { recipeHistories } from '~/composables/store/history'
 import { useKitchenStore } from '~/composables/store/kitchen'
@@ -7,6 +9,7 @@ import { userDataMeta } from '~/composables/store/userDataMeta'
 import { storageUid } from '~/utils/storageScope'
 import {
   createEmptyUserData,
+  fitCustomRecipesToBudget,
   isSameUserData,
   mergeUserData,
   normalizeUserData,
@@ -24,6 +27,8 @@ export const useAccountSync = createSharedComposable(() => {
   const status = ref<SyncStatus>('idle')
   const lastSyncedAt = ref(0)
   const errorMessage = ref('')
+  /** 我的菜谱超出同步上限的条数：这些只留在本机。 */
+  const omittedRecipes = ref(0)
   let running: Promise<void> | undefined
   let lastUploadedJson = ''
   let pendingUpload = false
@@ -61,10 +66,21 @@ export const useAccountSync = createSharedComposable(() => {
     return !!account.user.value && storageUid === String(account.user.value.id)
   }
 
+  /**
+   * 拼出真正的上传文档：我的菜谱按体积上限裁剪。
+   * 比较用的字符串和请求体必须出自同一次计算，否则每次同步都会重传。
+   */
+  function buildUploadDoc(data: UserData): { doc: UserData, json: string } {
+    const fitted = fitCustomRecipesToBudget(data.customRecipes)
+    omittedRecipes.value = fitted.omitted
+    const doc = { ...data, customRecipes: fitted.recipes }
+    return { doc, json: JSON.stringify(doc) }
+  }
+
   async function upload(data = readLocalUserData()): Promise<boolean> {
     if (!isCurrentScope())
       return false
-    const json = JSON.stringify(data)
+    const { doc, json } = buildUploadDoc(data)
     if (json === lastUploadedJson)
       return true
     try {
@@ -72,7 +88,7 @@ export const useAccountSync = createSharedComposable(() => {
         method: 'PUT',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data }),
+        body: JSON.stringify({ data: doc }),
       })
       if (!response.ok)
         throw new Error(`HTTP ${response.status}`)
@@ -122,7 +138,7 @@ export const useAccountSync = createSharedComposable(() => {
         }
       }
       else {
-        lastUploadedJson = JSON.stringify(data)
+        lastUploadedJson = buildUploadDoc(data).json
         lastSyncedAt.value = Date.now()
       }
       status.value = 'synced'
@@ -176,7 +192,8 @@ export const useAccountSync = createSharedComposable(() => {
   }
 
   watchDebounced(
-    [favoriteEntries, recipeHistories, userDataMeta, () => kitchen.data],
+    // customRecipeRemovals 由 userDataMeta 覆盖，所以这里只需要 watch 菜谱本身。
+    [favoriteEntries, recipeHistories, userDataMeta, () => kitchen.data, customRecipes],
     () => {
       if (!account.isAuthenticated.value || !isCurrentScope())
         return
@@ -197,6 +214,8 @@ export const useAccountSync = createSharedComposable(() => {
     status: readonly(status),
     lastSyncedAt: readonly(lastSyncedAt),
     errorMessage: readonly(errorMessage),
+    /** 我的菜谱里因为超出同步上限而只留在本机的条数 */
+    omittedRecipes: readonly(omittedRecipes),
     syncNow,
   }
 })
