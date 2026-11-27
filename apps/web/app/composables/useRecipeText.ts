@@ -11,10 +11,16 @@ let loading: Promise<RecipeTextData> | undefined
 export function loadRecipeTexts(): Promise<RecipeTextData> {
   if (textData.value)
     return Promise.resolve(textData.value)
-  loading ??= import('@cook/data/recipe-text.json').then(({ default: data }) => {
-    textData.value = data as RecipeTextData
-    return textData.value
-  })
+  loading ??= import('@cook/data/recipe-text.json')
+    .then(({ default: data }) => {
+      textData.value = data as RecipeTextData
+      return textData.value
+    })
+    .catch((error) => {
+      // 失败时清掉缓存，否则「重试」会一直拿到同一个 rejected promise
+      loading = undefined
+      throw error
+    })
   return loading
 }
 
@@ -45,4 +51,31 @@ export function extractRecipeSteps(text: RecipeText | undefined): RecipeTextBloc
     return result
   }
   return blocks.filter(block => block.type === 'list' && block.ordered)
+}
+
+function plainInline(text: string): string {
+  return text
+    .replace(/\[([^\]\n]+)\]\(https?:\/\/[^)\s]+\)/g, '$1')
+    .replace(/\*\*([^*\n]+)\*\*/g, '$1')
+    .replace(/`([^`\n]+)`/g, '$1')
+}
+
+/**
+ * 把步骤块转成可编辑的纯文本：段落空行分隔，有序列表编号，无序列表用 -。
+ * 行内 Markdown 只保留文字，供编辑器的预览和文本框共用。
+ */
+export function stepsToPlainText(blocks: RecipeTextBlock[]): string {
+  const parts: string[] = []
+  for (const block of blocks) {
+    if (block.type === 'paragraph') {
+      parts.push(plainInline(block.text))
+    }
+    else if (block.type === 'list') {
+      const start = block.start ?? 1
+      parts.push(block.items
+        .map((item, index) => `${block.ordered ? `${start + index}. ` : '- '}${plainInline(item)}`)
+        .join('\n'))
+    }
+  }
+  return parts.filter(part => part.trim()).join('\n\n')
 }

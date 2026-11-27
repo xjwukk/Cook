@@ -1,13 +1,14 @@
 <script lang="ts" setup>
-import type { RecipeDictionary, RecipeItem } from '@yunyoujun/cook'
-import type { StuffItem } from '~/types'
+import type { RecipeDictionary, RecipeItem, RecipeTextBlock } from '@yunyoujun/cook'
 import { cleanBv, validateRecipes } from '@yunyoujun/cook'
 import { uniqueStuff } from '@yunyoujun/cook/recommend'
 import { tools as foodTools, meat, staple, vegetable } from '~/data/food'
+import { resolveNoteForSave } from '~/utils/recipeNote'
 import { yunleHaptic } from '~/utils/yunleHost'
 
 /**
- * 官方菜谱编辑：只改 recipe.csv 里的 9 列，不做文字步骤正文的在线编辑。
+ * 官方菜谱编辑：改 recipe.csv 里的字段；官方步骤默认只读预览，
+ * 点「编辑步骤」后写入覆盖层的 note，清空则回退到 recipe-text.json。
  * 提交前用和 `pnpm validate` 同一套规则做本地校验，错误就地提示，不发请求。
  */
 const props = defineProps<{
@@ -24,6 +25,9 @@ const emit = defineEmits<{
 }>()
 
 const NAME_MAX = 60
+const NOTE_MAX = 20_000
+/** 服务端 RECIPE_OVERRIDE_LIMIT：非投稿菜谱的单条覆盖数据上限 */
+const OVERRIDE_LIMIT_BYTES = 8 * 1024
 
 /** recipe.csv 里出现过的 24 种做法 */
 const METHODS = [
@@ -60,7 +64,7 @@ const DIFFICULTY_OPTIONS = [
   { value: '困难', label: '困难' },
 ] as const
 
-const { sections, food } = usePersonalCatalog()
+const { food } = usePersonalCatalog()
 const toolOptions = computed(() => food.value.tools)
 
 const dict: RecipeDictionary = {
@@ -78,11 +82,31 @@ const bv = ref('')
 const link = ref('')
 const errors = ref<string[]>([])
 
-/** 投稿发布的菜谱 id 从高位段开始；它们的步骤在 note 里，可以在线编辑。 */
+/** 投稿发布的菜谱 id 从高位段开始；它们的步骤在 note 里，可以直接编辑。 */
 const PUBLISHED_ID_BASE = 10000
-const isPublishedRecipe = computed(() => typeof props.recipe?.id === 'number' && props.recipe.id >= PUBLISHED_ID_BASE)
-/** 发布菜谱的步骤正文：官方菜谱的步骤来自 recipe-text.json，不在这里编辑。 */
+const isPublishedRecipe = computed(() => {
+  const id = props.recipe?.id
+  return typeof id === 'number' && id >= PUBLISHED_ID_BASE
+})
+
+type OfficialStatus = 'idle' | 'loading' | 'ready' | 'empty' | 'error'
+type StepsMode = 'readonly' | 'editing'
+
 const note = ref('')
+const officialSteps = shallowRef<RecipeTextBlock[]>([])
+const officialStatus = ref<OfficialStatus>('idle')
+const officialError = ref('')
+const stepsMode = ref<StepsMode>('readonly')
+let stepRequest = 0
+
+const hasExistingNote = computed(() => Boolean(props.recipe?.note?.trim()))
+const officialText = computed(() => stepsToPlainText(officialSteps.value))
+const showNoteEditor = computed(() => isPublishedRecipe.value || stepsMode.value === 'editing')
+const noteLength = computed(() => [...note.value].length)
+const overrideBytes = computed(() => {
+  const recipe = buildRecipe()
+  return recipe ? new TextEncoder().encode(JSON.stringify(recipe)).length : 0
+})
 
 const methodOptions = computed(() => [
   ...METHODS,
@@ -94,7 +118,8 @@ function parseList(text: string) {
   return [...new Set(text.split(/[,，、;；\n]/).map(item => item.trim()).filter(Boolean))]
 }
 
-function fill(recipe: RecipeItem | null) {
+function fill() {
+  const recipe = props.recipe
   name.value = recipe?.name ?? ''
   stuff.value = recipe ? uniqueStuff(recipe.stuff) : []
   selectedTools.value = recipe ? [...recipe.tools] : []
@@ -105,13 +130,71 @@ function fill(recipe: RecipeItem | null) {
   link.value = recipe?.link ?? ''
   note.value = recipe?.note ?? ''
   errors.value = []
+
+  // 切换菜谱时让上一道菜的异步加载结果失效
+  stepRequest++
+  officialSteps.value = []
+  officialStatus.value = 'idle'
+  officialError.value = ''
+
+  if (!props.open || !recipe) {
+    stepsMode.value = 'readonly'
+    return
+  }
+  if (isPublishedRecipe.value || note.value.trim()) {
+    // 投稿发布或已经覆盖过步骤：直接编辑 note
+    stepsMode.value = 'editing'
+    return
+  }
+  stepsMode.value = 'readonly'
+  void loadOfficialSteps()
 }
 
-watch(() => props.recipe, fill, { immediate: true })
+watch([() => props.recipe, () => props.open], fill, { immediate: true })
 
-function selectedNote(items: StuffItem[]) {
-  const count = items.filter(item => stuff.value.includes(item.name)).length
-  return count ? `已选 ${count} 种` : ''
+async function loadOfficialSteps() {
+  const id = props.recipe?.id
+  if (!props.open || typeof id !== 'number' || id >= PUBLISHED_ID_BASE)
+    return
+  const request = ++stepRequest
+  officialStatus.value = 'loading'
+  officialError.value = ''
+  try {
+    await loadRecipeTexts()
+    if (request !== stepRequest)
+      return
+    officialSteps.value = extractRecipeSteps(findRecipeText(id))
+    officialStatus.value = officialSteps.value.length ? 'ready' : 'empty'
+  }
+  catch {
+    if (request !== stepRequest)
+      return
+    officialStatus.value = 'error'
+    officialError.value = '收录步骤加载失败，可以重试或直接手动填写。'
+  }
+}
+
+function startEditingSteps() {
+  if (officialStatus.value === 'loading')
+    return
+  note.value = officialText.value
+  stepsMode.value = 'editing'
+}
+
+function cancelEditingSteps() {
+  note.value = props.recipe?.note ?? ''
+  stepsMode.value = 'readonly'
+}
+
+function restoreOfficialSteps() {
+  note.value = ''
+  stepsMode.value = 'readonly'
+  if (officialStatus.value === 'idle' || officialStatus.value === 'error')
+    void loadOfficialSteps()
+}
+
+function retryOfficialSteps() {
+  void loadOfficialSteps()
 }
 
 function addStuff(text: string) {
@@ -145,6 +228,11 @@ function buildRecipe(): RecipeItem | null {
   const recipe = props.recipe
   if (!recipe || typeof recipe.id !== 'number')
     return null
+  const resolvedNote = resolveNoteForSave({
+    note: note.value,
+    officialText: officialText.value,
+    isPublished: isPublishedRecipe.value,
+  })
   return {
     id: recipe.id,
     name: name.value.trim(),
@@ -155,7 +243,7 @@ function buildRecipe(): RecipeItem | null {
     tags: parseList(tagText.value),
     bv: cleanBv(bv.value) ?? '',
     link: link.value.trim(),
-    ...(note.value.trim() ? { note: note.value.trim() } : {}),
+    ...(resolvedNote ? { note: resolvedNote } : {}),
   }
 }
 
@@ -169,6 +257,10 @@ function submit() {
     messages.push('菜名不能为空')
   else if ([...recipe.name].length > NAME_MAX)
     messages.push(`菜名不能超过 ${NAME_MAX} 个字`)
+  if (noteLength.value > NOTE_MAX)
+    messages.push(`步骤不能超过 ${NOTE_MAX} 个字`)
+  if (!isPublishedRecipe.value && note.value.trim() && overrideBytes.value > OVERRIDE_LIMIT_BYTES)
+    messages.push(`步骤太长，单条覆盖数据不能超过 8 KB（当前约 ${Math.ceil(overrideBytes.value / 1024)} KB），请精简后再保存`)
 
   const validation = validateRecipes([recipe], dict)
   messages.push(...validation.issues.filter(issue => issue.level === 'error').map(issue => issue.message))
@@ -226,22 +318,12 @@ function cancel() {
       <h2 class="cook-group-header">
         食材 · {{ stuff.length }} 种
       </h2>
-      <IngredientInput :selected="stuff" @add="addStuff" @remove="toggleStuff" />
-      <IngredientSection
-        v-for="section in sections"
-        :key="section.title"
-        :title="section.title"
-        :note="selectedNote(section.items)"
-      >
-        <IngredientChip
-          v-for="item in section.items"
-          :key="item.name"
-          :label="item.name"
-          :emoji="item.emoji"
-          :selected="stuff.includes(item.name)"
-          @click="toggleStuff(item.name)"
-        />
-      </IngredientSection>
+      <RecipeIngredientPicker
+        :key="recipe?.id ?? 'new'"
+        :selected="stuff"
+        @add="addStuff"
+        @toggle="toggleStuff"
+      />
 
       <IngredientSection title="厨具">
         <IngredientChip
@@ -310,22 +392,80 @@ function cancel() {
       </ion-list>
 
       <ion-list :inset="true">
-        <ion-item v-if="isPublishedRecipe">
-          <ion-textarea
-            v-model="note"
-            label="步骤"
-            label-placement="stacked"
-            placeholder="每行一步，例如：1. 锅中倒油烧热"
-            :auto-grow="true"
-            :rows="6"
-            @ion-input="errors = []"
-          />
-        </ion-item>
-        <ion-item v-else>
-          <ion-label class="admin-editor-note-hint">
-            <p>这道菜的步骤来自收录的图文正文，不在线编辑。要改步骤请走 recipe.csv 的流程。</p>
-          </ion-label>
-        </ion-item>
+        <template v-if="showNoteEditor">
+          <ion-item>
+            <ion-textarea
+              v-model="note"
+              label="步骤"
+              label-placement="stacked"
+              placeholder="每行一步，例如：1. 锅中倒油烧热"
+              :maxlength="NOTE_MAX"
+              :auto-grow="true"
+              :rows="8"
+              @ion-input="errors = []"
+            />
+          </ion-item>
+          <ion-item lines="none">
+            <ion-label class="admin-editor-note-meta">
+              <p v-if="!isPublishedRecipe">
+                清空并保存会恢复收录的图文步骤。
+              </p>
+              <p>
+                {{ noteLength }} / {{ NOTE_MAX }} 字<template v-if="!isPublishedRecipe">
+                  · 约 {{ Math.ceil(overrideBytes / 1024) }} KB / 8 KB
+                </template>
+              </p>
+            </ion-label>
+          </ion-item>
+          <ion-item v-if="!isPublishedRecipe && hasExistingNote" :button="true" :detail="false" @click="restoreOfficialSteps">
+            <ion-label color="medium" class="ion-text-center">
+              恢复官方步骤
+            </ion-label>
+          </ion-item>
+          <ion-item v-else-if="!isPublishedRecipe" :button="true" :detail="false" @click="cancelEditingSteps">
+            <ion-label color="medium" class="ion-text-center">
+              取消编辑
+            </ion-label>
+          </ion-item>
+        </template>
+
+        <template v-else>
+          <ion-item v-if="officialStatus === 'loading'">
+            <ion-label class="admin-editor-note-hint" role="status">
+              <p>正在加载收录的步骤…</p>
+            </ion-label>
+          </ion-item>
+          <ion-item v-else-if="officialStatus === 'error'">
+            <ion-label class="admin-editor-note-hint" role="alert">
+              <p>{{ officialError }}</p>
+            </ion-label>
+          </ion-item>
+          <ion-item v-else-if="officialStatus === 'ready'">
+            <ion-label class="admin-editor-note-preview">
+              <p>{{ officialText }}</p>
+            </ion-label>
+          </ion-item>
+          <ion-item v-else>
+            <ion-label class="admin-editor-note-hint">
+              <p>这道菜没有收录的图文步骤，可以手动填写。</p>
+            </ion-label>
+          </ion-item>
+          <ion-item
+            :button="officialStatus !== 'loading'"
+            :detail="false"
+            :disabled="officialStatus === 'loading'"
+            @click="startEditingSteps"
+          >
+            <ion-label color="primary" class="ion-text-center">
+              {{ officialStatus === 'ready' ? '编辑步骤' : '手动编写步骤' }}
+            </ion-label>
+          </ion-item>
+          <ion-item v-if="officialStatus === 'error'" :button="true" :detail="false" @click="retryOfficialSteps">
+            <ion-label color="medium" class="ion-text-center">
+              重试加载
+            </ion-label>
+          </ion-item>
+        </template>
       </ion-list>
 
       <ul v-if="errors.length" class="admin-editor-errors" role="alert">
@@ -335,7 +475,7 @@ function cancel() {
       </ul>
 
       <p class="cook-group-footer">
-        修改会立即对所有访客生效。「导出补丁 CSV」可以把改动合回 recipe.csv 永久固化。
+        修改会立即对所有访客生效。「导出补丁 CSV」可以把改动合回 recipe.csv 永久固化；步骤改动只保存在覆盖层。
       </p>
 
       <ion-list v-if="modified" :inset="true" class="admin-editor-revert">
@@ -362,12 +502,20 @@ function cancel() {
   font-size: var(--fs-sm);
   line-height: 1.7;
 }
-.admin-editor-note-hint p {
+.admin-editor-note-hint p,
+.admin-editor-note-meta p {
   margin: 0;
   color: var(--c-ink-3);
   font-size: var(--fs-sm);
   line-height: 1.6;
   white-space: normal;
+}
+.admin-editor-note-preview p {
+  margin: 0;
+  color: var(--c-ink);
+  font-size: var(--fs-sm);
+  line-height: 1.8;
+  white-space: pre-wrap;
 }
 .admin-editor-revert {
   margin-bottom: 40px;

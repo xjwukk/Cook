@@ -1,6 +1,5 @@
 <script lang="ts" setup>
 import type { CustomRecipe } from '~/composables/store/customRecipe'
-import type { StuffItem } from '~/types'
 import { onIonViewWillEnter } from '@ionic/vue'
 import { uniqueStuff } from '@yunyoujun/cook/recommend'
 import { getCustomRecipe, removeCustomRecipe, saveCustomRecipe } from '~/composables/store/customRecipe'
@@ -23,7 +22,7 @@ const source = ref('')
 const note = ref('')
 const error = ref('')
 const extraTool = ref('')
-const { sections, food } = usePersonalCatalog()
+const { food } = usePersonalCatalog()
 const tools = computed(() => food.value.tools)
 const customTools = computed(() => selectedTools.value.filter(name => !tools.value.some(tool => tool.name === name)))
 
@@ -49,11 +48,6 @@ function fillForm() {
 }
 fillForm()
 onIonViewWillEnter(fillForm)
-
-function selectedNote(items: StuffItem[]) {
-  const count = items.filter(item => stuff.value.includes(item.name)).length
-  return count ? `已选 ${count} 种` : ''
-}
 
 function addStuff(text: string) {
   stuff.value = uniqueStuff([...stuff.value, text])
@@ -150,17 +144,12 @@ async function remove() {
       <h2 class="cook-group-header">
         食材 · {{ stuff.length }} 种
       </h2>
-      <IngredientInput :selected="stuff" @add="addStuff" @remove="toggleStuff" />
-      <IngredientSection v-for="section in sections" :key="section.title" :title="section.title" :note="selectedNote(section.items)">
-        <IngredientChip
-          v-for="item in section.items"
-          :key="item.name"
-          :label="item.name"
-          :emoji="item.emoji"
-          :selected="stuff.includes(item.name)"
-          @click="toggleStuff(item.name)"
-        />
-      </IngredientSection>
+      <RecipeIngredientPicker
+        :key="existing?.customId ?? 'new'"
+        :selected="stuff"
+        @add="addStuff"
+        @toggle="toggleStuff"
+      />
 
       <IngredientSection title="厨具（可选）">
         <IngredientChip

@@ -56,7 +56,7 @@ const rawSteps = shallowRef<RecipeTextBlock[]>([])
 const stepsLoading = ref(false)
 let stepRequest = 0
 
-watch(() => props.recipe?.id, async (id) => {
+watch([() => props.recipe?.id, () => props.recipe?.note], async ([id]) => {
   const request = ++stepRequest
   rawSteps.value = []
   // 自建菜谱没有数字 id，但有自己的步骤备注。

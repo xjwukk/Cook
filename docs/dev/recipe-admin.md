@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS recipe_overrides (
 { "version": 1794562174743, "overrides": [{ "id": 23, "name": "...", "stuff": [], "tools": [] }] }
 ```
 
-- 只返回白名单字段：`id, name, stuff, bv, difficulty, tags, methods, tools, link`
+- 只返回白名单字段：`id, name, stuff, bv, difficulty, tags, methods, tools, link, note`
 - `Cache-Control: no-store`，`version` 取所有行 `max(updated_at)`
 
 ### 管理员写接口
@@ -95,12 +95,13 @@ CREATE TABLE IF NOT EXISTS recipe_overrides (
 2. **列表**：复用 `RecipeListRow` 的视觉，右侧改为「编辑」；已修改的行显示「已修改」徽标（`--c-saffron` 底色）
 3. **编辑**：`components/recipe/AdminRecipeEditor.vue`，参照 `PrivateRecipeEditor.vue` 的控件写法
    - 菜名 `<ion-input>`
-   - 食材：`IngredientSection` + `IngredientChip`（词表来自 `usePersonalCatalog`），提交时用 `uniqueStuff` 归一
-   - 厨具：同上，仅 `food.json` 的 8 项
+   - 食材：`RecipeIngredientPicker`（输入框 + 按蔬菜/肉和蛋/主食折叠的 `IngredientSection`，默认收起，标题显示已选数量；词表来自 `usePersonalCatalog`），提交时用 `uniqueStuff` 归一
+   - 厨具：`IngredientSection` + `IngredientChip`，仅 `food.json` 的 8 项
    - 做法：24 个 `methods` 值多选
    - 难度：`简单 / 普通 / 困难 / 空`
    - 标签：自由输入，顿号分隔
    - 视频号 / 图文链接：文本输入，前端校验格式
+   - 步骤：官方菜谱先只读预览 `recipe-text.json` 的「操作 / 步骤」段，点「编辑步骤」后用 `note` 覆盖；投稿发布的菜谱直接编辑 `note`。清空或与官方文本相同则不写 `note`
    - id：只读
    - **提交前本地校验**：`packages/cook/src/utils/validate.ts` 的 `validateRecipes([edited], dict)`，`dict` 由 `food.json` 构建；错误就地显示，不提交
    - 保存 → `PUT`；「撤销修改」→ `DELETE` 前用 `confirmDestructive` 确认
@@ -155,13 +156,16 @@ CREATE TABLE IF NOT EXISTS recipe_overrides (
 ### 浏览器实测
 
 1. 管理员登录 →「我的」看到「全量菜谱」；普通账号看不到
-2. 打开 `/admin/recipes`：搜索「番茄」，改第一道菜的菜名与食材 → 保存
+2. 打开 `/admin/recipes`：搜索「番茄」，改第一道菜的菜名与食材 → 保存；食材三张卡片默认收起，点标题展开后可选
 3. 返回 `/library`：该菜显示新菜名（**页面本身无任何编辑元素**）
 4. 做菜页选中对应食材 → 推荐结果里也是新菜名（证明覆盖层进入推荐链路）
 5. 「只看已修改」筛出该菜；「导出补丁 CSV」只含这一行，列顺序与 `recipe.csv` 一致
 6. 「撤销修改」后回到原名
 7. 普通账号直接访问 `/admin/recipes` → 跳回「我的」
-8. 三视口（390×844 / 834×1024 / 1440×900）截图：管理页列表不溢出、编辑表单可用
+8. 编辑有 `recipe-text.json` 正文的菜谱（如 id 734）：步骤显示只读预览；点「编辑步骤」修改并保存，详情页显示新步骤；清空步骤保存后详情恢复官方图文步骤
+9. 点「编辑步骤」但不修改直接保存：不产生 `note`，详情仍使用官方结构化步骤
+10. 有步骤改动时点「导出补丁 CSV」：先出现「步骤不会进入补丁 CSV」确认框，取消则不导出
+11. 三视口（390×844 / 834×1024 / 1440×900）截图：管理页列表不溢出、编辑表单可用、折叠标题可点
 
 ### 回归
 
@@ -171,7 +175,7 @@ CREATE TABLE IF NOT EXISTS recipe_overrides (
 
 - 不做用户提交 / 审核队列（仅管理员直接生效）
 - 不做个人副本覆盖
-- 不做文字步骤正文的在线编辑（正文来自 HowToCook 并带指纹校验，改动会使审核数据失效，另立方案）
+- 不做 `recipe-text.json` 的在线改写（正文来自 HowToCook 并带指纹校验）；步骤修订保存在覆盖层的 `note`，见 [0027](../decisions/0027-official-recipe-step-editing.md)
 - 不改 IndexedDB schema 版本号（覆盖层在内存合并，不写回库）
 - 不在浏览页暴露任何管理能力
 - 不做多人同时编辑的冲突合并（按 `updated_at` 后写胜出，个人站点足够）

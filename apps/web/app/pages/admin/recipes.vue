@@ -240,6 +240,14 @@ async function exportPatch() {
     await showAlert('没有可导出的修改', '先编辑至少一道菜谱，再导出补丁 CSV。')
     return
   }
+  const withSteps = modified.filter(recipe => recipe.note?.trim())
+  if (withSteps.length && !await confirmDestructive({
+    header: '步骤不会进入补丁 CSV',
+    message: `有 ${withSteps.length} 道菜谱的步骤改动只保存在覆盖层。补丁 CSV 只有 9 列、不含步骤；合回 recipe.csv 时需要另外同步步骤。`,
+    confirmText: '仍然导出',
+  })) {
+    return
+  }
   const csv = recipesToCsv(modified)
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
   const link = document.createElement('a')
@@ -395,7 +403,7 @@ function metaText(recipe: RecipeItem) {
       </div>
 
       <p class="cook-group-footer admin-recipes-footnote">
-        修改立即对所有访客生效；导出补丁 CSV 后合回 recipe.csv，并通过 pnpm validate，再删除对应覆盖记录即可永久固化。
+        修改立即对所有访客生效；导出补丁 CSV 后合回 recipe.csv，并通过 pnpm validate，再删除对应覆盖记录即可永久固化。步骤改动只保存在覆盖层，不会进入补丁 CSV。
       </p>
     </ion-content>
 

@@ -157,6 +157,21 @@ describe('recipe overrides', () => {
     assert.equal(body.overrides[0].name, updated.name)
   })
 
+  it('stores step text in note and removes it when cleared', async () => {
+    const withNote = { ...recipe, note: '1. 番茄切块\n2. 下锅翻炒' }
+    const saved = await putRecipe(recipe.id, withNote, adminCookie)
+    assert.equal(saved.status, 200)
+
+    let body = await publicOverrides()
+    assert.equal(body.overrides[0].note, withNote.note)
+
+    const cleared = await putRecipe(recipe.id, recipe, adminCookie)
+    assert.equal(cleared.status, 200)
+
+    body = await publicOverrides()
+    assert.equal('note' in body.overrides[0], false)
+  })
+
   it('removes the override and falls back to the official version', async () => {
     const removed = await fetch(`${base}/api/admin/recipes/${recipe.id}`, {
       method: 'DELETE',
