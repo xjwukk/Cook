@@ -1,5 +1,29 @@
+# HTTP：只做证书续期校验和跳转，避免 ACME 被 301 打断。
 server {
+    listen 80;
+    listen [::]:80;
     server_name cook.rawleycode.art;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/cook.rawleycode.art;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    # HTTP/2：首屏需要下载 20+ 个字体切片，HTTP/1.1 只有 6 个并发连接，会排队。
+    # nginx 1.24 使用 listen 参数的 http2 写法（1.25.1+ 也可以用 http2 on;）。
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name cook.rawleycode.art;
+
+    # certbot 默认路径；如果服务器用其他证书路径，部署前改成实际路径。
+    ssl_certificate     /etc/letsencrypt/live/cook.rawleycode.art/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/cook.rawleycode.art/privkey.pem;
 
     client_max_body_size 10m;
 
@@ -54,7 +78,4 @@ server {
         add_header Cache-Control "no-cache" always;
         try_files $uri $uri/ /index.html;
     }
-
-    listen 80;
-    listen [::]:80;
 }

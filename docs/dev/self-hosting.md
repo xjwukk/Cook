@@ -83,6 +83,10 @@ server {
 }
 ```
 
+TLS 监听要保留 `listen 443 ssl http2;` 里的 `http2`。首屏会下载 20+ 个字体切片，HTTP/1.1 只允许 6 个并发连接，切片会分波排队；HTTP/2 可以在一个连接里复用。
+
+如果 80 端口只做跳转，保留 `/.well-known/acme-challenge/` 的 location，否则 certbot 续期会被 301 打断。仓库里的 `cook.rawleycode.art.nginx` 已经按这个结构写好（80 跳转 + 443 ssl http2），证书路径按 certbot 默认位置填写，部署前用 `nginx -t` 校验并按实际路径调整。
+
 ### 静态资源缓存与压缩
 
 Nginx 需要为构建产物和字体显式开启缓存与 gzip（仓库里的 `cook.rawleycode.art.nginx` 和 `docker/nginx.conf` 已包含）：
