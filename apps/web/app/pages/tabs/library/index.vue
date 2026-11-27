@@ -1,14 +1,12 @@
 <script lang="ts" setup>
 import type { IonSearchbarCustomEvent, SearchbarInputEventDetail } from '@ionic/core'
-import type { DbRecipeItem } from '~/utils/db'
+import type { RecipeItem } from '~/types'
 import { useStorage } from '@vueuse/core'
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import { useIndexedDB } from '~/composables/db'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { favoriteRecipeIds } from '~/composables/store/favorite'
 import { useKitchenStore } from '~/composables/store/kitchen'
-import { applyRecipeOverrides } from '~/composables/useRecipeOverrides'
+import { useRecipeStore } from '~/composables/store/recipe'
 import { cookDocumentHead, publicPages } from '~/constants'
-import { db } from '~/utils/db'
 import { canCookWithKitchen } from '~/utils/kitchenMatch'
 import { scopedKey } from '~/utils/storageScope'
 import { yunleHaptic } from '~/utils/yunleHost'
@@ -21,21 +19,22 @@ useHead(cookDocumentHead(publicPages.library))
 
 const keyword = ref('')
 const kitchen = useKitchenStore()
+const rStore = useRecipeStore()
 const onlyOwned = useStorage(scopedKey('library-only-owned'), false)
-const loading = ref(true)
-const baseRecipes = shallowRef<DbRecipeItem[]>([])
-const recipes = computed(() => applyRecipeOverrides(baseRecipes.value))
+// 菜谱数据复用 recipe store：它已经在首页加载过，避免切到菜谱库时再读一次 IndexedDB。
+const loading = computed(() => rStore.isSearching)
+const recipes = computed(() => rStore.recipes)
 const view = ref<'all' | 'fav'>('all')
-const detail = shallowRef<DbRecipeItem>()
+const detail = shallowRef<RecipeItem>()
 const detailOpen = ref(false)
 
-function openDetail(dish: DbRecipeItem) {
+function openDetail(dish: RecipeItem) {
   detail.value = dish
   detailOpen.value = true
 }
 
 const favoriteIdSet = computed(() => new Set(favoriteRecipeIds.value))
-const isFav = (r: DbRecipeItem) => r.id != null && favoriteIdSet.value.has(r.id)
+const isFav = (r: RecipeItem) => r.id != null && favoriteIdSet.value.has(r.id)
 
 const filtered = computed(() => {
   const text = keyword.value.trim()
@@ -47,16 +46,6 @@ const favCount = computed(() => recipes.value.filter(isFav).length)
 
 const showToast = ref(false)
 const toastMessage = ref('')
-
-onMounted(async () => {
-  try {
-    await useIndexedDB().init()
-    baseRecipes.value = await db.recipes.toArray()
-  }
-  finally {
-    loading.value = false
-  }
-})
 
 function onViewChange(value: unknown) {
   view.value = value === 'fav' ? 'fav' : 'all'
@@ -72,44 +61,62 @@ function onToggled(favorited: boolean) {
   showToast.value = true
 }
 
-// 先渲染首屏的行，其余在空闲时一次补齐（分成很多小批反而因为反复 diff 整个列表更慢）。
-// 不做虚拟滚动：行全部留在 DOM 里，滚动时不需要任何 JS 和重新布局；
-// 每行是独立组件，页面重新渲染（例如切换 tab）时行不会跟着更新。
+// 首屏只渲染前 30 行，滚动接近底部时再追加 50 行。
+// 不再在空闲时一次补齐 887 行：那会在切到菜谱库时产生一个 1s+ 的长任务，
+// 887 组 ion-item-sliding 也会阻塞主线程。行加入 DOM 后仍然保留，滚动不需要重新创建。
 const FIRST_BATCH = 30
+const PAGE_SIZE = 50
 const renderCount = ref(FIRST_BATCH)
 const rendered = computed(() => displayed.value.slice(0, renderCount.value))
 
-// 每 50 行一组，组外用 content-visibility 跳过布局：切回这个 tab 时不用重新布局整张列表，
-// 滚动时也只在进入新的一组时布局一次，而不是每一帧都布局
+// 每 50 行一组，组外用 content-visibility 跳过布局：滚动时只在进入新的一组时布局一次，
+// 而不是每一帧都布局。
 const CHUNK_SIZE = 50
 const chunks = computed(() => {
   const list = rendered.value
-  const result: DbRecipeItem[][] = []
+  const result: RecipeItem[][] = []
   for (let i = 0; i < list.length; i += CHUNK_SIZE)
     result.push(list.slice(i, i + CHUNK_SIZE))
   return result
 })
 
-// iOS Safari 没有 requestIdleCallback
-function onIdle(cb: () => void) {
-  return typeof requestIdleCallback === 'function'
-    ? requestIdleCallback(cb, { timeout: 300 })
-    : window.setTimeout(cb, 32)
-}
-function cancelIdle(handle: number) {
-  return typeof cancelIdleCallback === 'function'
-    ? cancelIdleCallback(handle)
-    : window.clearTimeout(handle)
+// 滚动到接近底部时追加下一批。用 IntersectionObserver 而不是 scroll 事件，
+// 避免滚动过程中频繁执行 JS。
+const sentinel = ref<HTMLElement>()
+let observer: IntersectionObserver | undefined
+
+function loadMore() {
+  const next = Math.min(renderCount.value + PAGE_SIZE, displayed.value.length)
+  if (next !== renderCount.value)
+    renderCount.value = next
 }
 
-let idleHandle = 0
-watch(displayed, (list) => {
-  cancelIdle(idleHandle)
-  renderCount.value = FIRST_BATCH
-  if (list.length > FIRST_BATCH)
-    idleHandle = onIdle(() => (renderCount.value = list.length))
+onMounted(() => {
+  observer = new IntersectionObserver((entries) => {
+    if (entries.some(entry => entry.isIntersecting))
+      loadMore()
+  }, { rootMargin: '600px 0px' })
+  if (sentinel.value)
+    observer.observe(sentinel.value)
 })
-onBeforeUnmount(() => cancelIdle(idleHandle))
+
+watch(sentinel, (el, prev) => {
+  if (prev)
+    observer?.unobserve(prev)
+  if (el)
+    observer?.observe(el)
+})
+
+// 只在筛选条件变化时回到首批；收藏状态变化不应该把用户滚到一半的列表收回去。
+watch([keyword, view, onlyOwned], async () => {
+  renderCount.value = FIRST_BATCH
+  await nextTick()
+  // 列表很短或视口很高时，哨兵可能在视口内却不会再触发一次 intersection。
+  if (sentinel.value && sentinel.value.getBoundingClientRect().top < window.innerHeight + 600)
+    loadMore()
+})
+
+onBeforeUnmount(() => observer?.disconnect())
 </script>
 
 <template>
@@ -195,6 +202,13 @@ onBeforeUnmount(() => cancelIdle(idleHandle))
         <h3>{{ onlyOwned ? '暂无库存可做的菜谱' : keyword ? '没有找到相关菜谱' : '还没有收藏的菜谱' }}</h3>
         <p>{{ onlyOwned ? '调整厨房库存、取消其他筛选或关闭库存筛选试试' : keyword ? '换个关键词试试' : '左滑菜谱或点星标即可收藏' }}</p>
       </div>
+
+      <div
+        v-if="!loading && displayed.length && renderCount < displayed.length"
+        ref="sentinel"
+        class="library-sentinel"
+        aria-hidden="true"
+      />
     </ion-content>
     <RecipeDetailSheet v-if="detail" v-model:open="detailOpen" :recipe="detail" />
     <ion-toast
@@ -238,5 +252,8 @@ onBeforeUnmount(() => cancelIdle(idleHandle))
 }
 .library-row {
   height: 44px;
+}
+.library-sentinel {
+  height: 1px;
 }
 </style>

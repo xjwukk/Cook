@@ -83,6 +83,17 @@ server {
 }
 ```
 
+### 静态资源缓存与压缩
+
+Nginx 需要为构建产物和字体显式开启缓存与 gzip（仓库里的 `cook.rawleycode.art.nginx` 和 `docker/nginx.conf` 已包含）：
+
+- `/_nuxt/*`：文件名带内容哈希，`expires 1y` + `Cache-Control: public, immutable`。
+- `/fonts/*`：切片文件名暂时不带内容哈希，`expires 30d` + `must-revalidate`；重新切分字体、换成带哈希的文件名后可以改成 1 年 immutable。
+- `gzip on` + `gzip_types` 包含 `text/css`、`application/javascript`、`application/json`、`image/svg+xml`。字体 CSS 未压缩约 200 KB，gzip 后约 60 KB。
+- `index.html` 用 `Cache-Control: no-cache`，发布新版本后能立即拿到新的资源清单。
+
+如果站点前面还有 CDN（EdgeOne / Cloudflare），同步检查 `edgeone.json` / `apps/web/public/_headers` 里的 `/_nuxt/*` 与 `/fonts/*` 规则。
+
 启用 HTTPS 后把 `.env` 里的 `COOK_COOKIE_SECURE` 改成 `1`，并把 `COOK_ALLOWED_ORIGINS`、`NUXT_PUBLIC_SITE_URL` 改成 `https://` 地址后重新构建。
 
 ## 账号与权限

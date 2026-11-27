@@ -366,6 +366,8 @@ export const useRecipeStore = defineStore('recipe', () => {
   })
 
   return {
+    // 菜谱库等页面直接复用这份数据，避免各自再读一次 IndexedDB。
+    recipes,
     recipesLength,
     // 料理助手：在「审核数据 + 我的厨房」过滤后的菜谱里做候选池粗筛。
     eligibleRecipes,

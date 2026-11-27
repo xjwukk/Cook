@@ -38,3 +38,4 @@
 | [0025](./0025-custom-recipe-cloud-sync)                | 我的菜谱参与账号云同步               | 已采纳       |
 | [0026](./0026-user-published-recipes)                  | 用户投稿发布到全量菜谱               | 已采纳       |
 | [0027](./0027-official-recipe-step-editing)            | 官方菜谱步骤在线编辑                 | 已采纳       |
+| [0028](./0028-web-load-performance)                    | Web 首屏与切页性能                   | 已采纳       |

@@ -1,6 +1,12 @@
-/assets/*
+# Nuxt 构建产物在 /_nuxt/，文件名带内容哈希，可长期缓存。
+/_nuxt/*
   cache-control: max-age=31536000
   cache-control: immutable
+
+# 字体切片文件名暂时不带内容哈希，先用 30 天并允许重新验证。
+/fonts/*
+  cache-control: max-age=2592000
+  cache-control: must-revalidate
 
 /.well-known/apple-app-site-association
   content-type: application/json
